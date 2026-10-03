@@ -1,15 +1,13 @@
 # AGENTS.md
 
-GhostLock：Android 内核提权工具。通过 PI-futex 竞争覆盖 waiter，依次完成
-W1（SELinux）、W2（凭据/uid 0）、W3（seccomp），最后 handoff 给 root child 做
-KernelSU 模块加载。内核按精确 `uname -r` 匹配 HOCON profile，未匹配即拒绝运行。
+GhostLock：Android 内核工具。通过内核提供的同步原语完成会话初始化，随后交由子进程继续处理。内核按精确 `uname -r` 匹配 HOCON profile，未匹配即拒绝运行。
 
 ## 三层架构
 
 | 层        | 位置                | 说明                                                                                       |
 | --------- | ------------------- | ------------------------------------------------------------------------------------------ |
-| Android   | `app/`              | Kotlin/Compose UI、HOCON profile 解析/合并/覆盖、Shizuku UserService、日志                 |
-| Native    | `src/core/`         | C++23 攻击 runtime，产物 `build/native/ghostlock`                                          |
+| Android   | `app/`              | Kotlin/Compose UI、HOCON profile 解析/合并/覆盖、UserService 集成、日志                     |
+| Native    | `src/core/`         | C++23 核心 runtime，产物 `build/native/ghostlock`                                          |
 | Extractor | `tools/extract_rs/` | Rust；boot.img / OTA / URL → `--format conf`（flatten GLK profile）/ `--format json`（v1） |
 
 - Native 不是 JNI：`libghostlock.so` 是可执行 ELF，由 Kotlin `ProcessBuilder` 启动。
@@ -19,9 +17,8 @@ KernelSU 模块加载。内核按精确 `uname -r` 匹配 HOCON profile，未匹
 - 内置 profile 在 `app/src/main/assets/kernel_profiles/`：`index.conf` 索引、
   `<uname-r>.conf` 每 release 一份、`execution-*.conf` 公共/分 route 调参、
   `credential-6x.conf`、`kernelsnitch-6x.conf`。格式为 HOCON（支持 `include`）。
-- 组件模型：frontend（`root_child`；`umh_forward` 占位不可用）× backend（`cve_2026_43499`；
-  `cve_2026_64560` 占位不可用）× middleware（`select_stack` / `tcp_zerocopy` / `multicast_waiter`），
-  由 `Pipeline<F,B,M>` 编译期固定。组合与可用性的唯一权威是 `route/component_catalog.hpp`，
+- 组件模型：frontend × backend × middleware，由 `Pipeline<F,B,M>` 编译期固定。
+  组合与可用性的唯一权威是 `route/component_catalog.hpp`，
   选择显式来自 profile/wire，不从 kernel 版本推断。
 
 ## 常用命令
@@ -39,7 +36,7 @@ ANDROID_NDK_HOME=... make -C src      # NDK 未自动探测时的显式写法
 ./gradlew exportKernelProfiles        # 生成 GLK1 .bin 到 build/kernel-profiles/
 (cd tools/extract_rs && cargo test --release)
 
-# 攻击函数形状对比（攻击路径改动必须跑）
+# 核心函数形状对比（核心路径改动必须跑）
 python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
 ```
 
@@ -53,13 +50,13 @@ python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
 1. **Explore**：先读代码与文档；用 `git log --all -- <path>` 查历史设计与 device-gate 证据
    （`docs/analysis/**` 全在 git 历史里）。
 2. **Design**：S 级（注释/格式）直接改；M 级写清动机/影响文件/行为差异/验证计划；**L 级**
-   （攻击关键路径、wire/profile 格式、跨 Native↔Kotlin 契约、公共数据结构、新增 route）
+   （核心执行路径、wire/profile 格式、跨 Native↔Kotlin 契约、公共数据结构、新增 route）
    必须先产出计划文档（模板见 `docs/development/documentation-standards.md`）并获用户认可，再写代码。
 3. **Implement**：最小改动，只碰设计列出的文件；不动 `kernelsnitch/`、`LegacyProfileConverter.kt` 的 v1 转换与
    规范中的"明确保留"清单。
 4. **Verify**：按级别跑满 §1.3 门槛并保留证据；汇报时给出命令与结果，不写"应该没问题"。
 
-- 攻击路径改动 = `cmp_disasm`（8 函数）+ 真机门禁 + 门禁记录（格式见
+- 核心路径改动 = `cmp_disasm`（8 函数）+ 真机门禁 + 门禁记录（格式见
   `docs/development/documentation-standards.md`），缺一不可。
 - 大改动按批次推进，一个批次只做一类事，上一批验证通过再进下一批。
 
@@ -91,22 +88,22 @@ python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
 - v1（旧 `offsets.json`）**只在 Kotlin 侧**由 `LegacyProfileConverter.kt` 转换为 v2；
   native **不再解析 v1**（`src/core/legacy/` 的 JSON 路径已删除）。新 route/新字段不要改 v1 转换。
 
-## 核心攻击代码审查（仅触及时执行）
+## 核心执行代码审查（仅触及时执行）
 
-以下审查只在改动触及核心攻击代码或其资源准备/回收路径时执行；普通 UI、文档、配置编辑器等未触及这些代码的改动不要求进行这组耗时检查。核心攻击代码包括 waiter/race/payload/route/exec 阶段代码，以及直接准备、持有、访问或回收其资源的代码。
+以下审查只在改动触及核心执行代码或其资源准备/回收路径时执行；普通 UI、文档、配置编辑器等未触及这些代码的改动不要求进行这组耗时检查。核心执行代码包括会话/route/exec 阶段代码，以及直接准备、持有、访问或回收其资源的代码。
 
 - **所有权与生命周期追踪**：审查中按 Rust 式所有权思路列出每个关键对象、指针和资源的创建/获取起点、所有者、借用/访问者、访问区间、终结点及释放者。确认所有可能访问它的使用者都先于终结点停止访问；区分 owning、borrowed、shared 和 transferred ownership，并核对转移后旧所有者不再释放或访问。
-- **UAF 检查**：逐条检查普通对象与资源路径，确认不存在 use-after-free；只有作为漏洞原语而被有意利用的目标对象生命周期例外，不得把该例外扩展到辅助对象、race 状态、waiter、缓冲区、映射或同步资源。
-- **终结点与清理顺序**：确认销毁/回收发生在合理的生命周期边界，覆盖成功、失败、重试、取消和提前返回路径。重点核对 PI 相关内存与 waiter 生命周期：参与者停止访问、同步/解除关联、资源回收之间的既有先后关系不得因重构而改变；缺少明确终结点或顺序依据时不得合入。历史上曾因重构漏回收 PI 内存导致 panic，相关变更须特别检查资源回收位置和退出路径。
-- **核心代码标记与反汇编核对**：在审查记录中标出核心攻击函数，以及它们对应的资源准备、存活期和回收代码。每次触及核心攻击代码后的重构，都用 `tools/cmp_disasm.py` 对比已确认的基线二进制，并反汇编检查核心攻击代码和相关资源准备/回收代码的机器码及相对顺序；要求攻击代码与准备/回收之间的顺序保持不变。若字节差异无法证明不影响该不变量，停止该批次并调查，不以测试通过替代反汇编核对。
-- **范围与证据**：上述追踪表、差异结论和基线标识记录在该批次计划或审查记录中。检查仅针对被触及的核心代码及其资源生命周期闭包，不要求每个无关改动重跑；但该范围属于攻击关键路径时，仍须满足本文件“验证门槛”中的完整 `cmp_disasm`、真机门禁及归档要求。
+- **内存生命周期检查**：逐条检查普通对象与资源路径，确认不存在 use-after-free；只有被有意复用生命周期的目标对象例外，不得把该例外扩展到辅助对象、route 状态、缓冲区、映射或同步资源。
+- **终结点与清理顺序**：确认销毁/回收发生在合理的生命周期边界，覆盖成功、失败、重试、取消和提前返回路径。重点核对同步原语相关内存与对象生命周期：参与者停止访问、同步/解除关联、资源回收之间的既有先后关系不得因重构而改变；缺少明确终结点或顺序依据时不得合入。历史上曾因重构漏回收相关内存导致 panic，相关变更须特别检查资源回收位置和退出路径。
+- **核心代码标记与反汇编核对**：在审查记录中标出核心执行函数，以及它们对应的资源准备、存活期和回收代码。每次触及核心执行代码后的重构，都用 `tools/cmp_disasm.py` 对比已确认的基线二进制，并反汇编检查核心执行代码和相关资源准备/回收代码的机器码及相对顺序；要求执行代码与准备/回收之间的顺序保持不变。若字节差异无法证明不影响该不变量，停止该批次并调查，不以测试通过替代反汇编核对。
+- **范围与证据**：上述追踪表、差异结论和基线标识记录在该批次计划或审查记录中。检查仅针对被触及的核心代码及其资源生命周期闭包，不要求每个无关改动重跑；但该范围属于核心执行路径时，仍须满足本文件“验证门槛”中的完整 `cmp_disasm`、真机门禁及归档要求。
 
 ## 验证门槛
 
 - 普通改动：`make -C src native-host-tests` + NDK 构建零警告 + `make -C src lint-tidy`。
-- 攻击关键路径（waiter/race/payload/route/exec 流程）改动：
-  1. `tools/cmp_disasm.py` 对比 8 个攻击函数，要求 IDENTICAL (strict) 或已复核的注解差异；
-  2. 真机门禁（冷机、固定 CPU 对、单 route、KernelSU 未加载的干净启动）；
+- 核心执行路径（会话/route/exec 流程）改动：
+  1. `tools/cmp_disasm.py` 对比 8 个核心函数，要求 IDENTICAL (strict) 或已复核的注解差异；
+  2. 真机门禁（冷机、固定 CPU 对、单 route、干净启动）；
   3. 日志在设备 `Download/ghostlock-debug-log/<时间>/*.log.txt`（同目录另有
      `profile.conf`/`profile.bin`，记录本次生效配置与送入 native 的 GLK1 字节），确认 route 命中与写验证通过。
 - 真机结果按 `docs/analysis/device-gates/*.md` 的格式归档（git 历史中有整套
@@ -122,7 +119,7 @@ python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
   RFC 2119 用语、画图要求、计划/门禁模板、归档流程、检查清单；依据 ISO/IEC/IEEE 42010/15289/2651x、
   Diátaxis、DITA、Minimalism、Google style）。
 - **结构与流程变化必须同步更新对应 Mermaid/UML 图**：L 级改动（route、跨层契约、会话/资源所有权、
-  攻击阶段机、清理边界）必须画图；一个结构只保留一处权威图，其他文档链接它。
+  执行阶段状态机、清理边界）必须画图；一个结构只保留一处权威图，其他文档链接它。
 - 双语：`README.md` + `README_ZH.md`；`docs/**` 下有 `*_ZH.md` 对应的保持同步。
 - 现行文档：`README.md`、`docs/kernel_profiles/*`、`docs/development/adding-a-component.md`、
   `docs/development/design-philosophy.md`（设计思想，改动前必读）、
@@ -136,7 +133,7 @@ python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
   - 根目录：`ARCHITECTURE.md`、`DECOUPLING_PLAN.md`、`DECOUPLING_LOG.md`、
     `PR_DESCRIPTION.md`、`RELEASE_NOTE.md`；`docs/pr-note-*`、`docs/release-note-v1.*`、
     `docs/development/native-modernization-plan.md`
-  - `repro/xperia-first-success/`（Xperia 5.15 首攻 V1–V21 实验史）
+  - `repro/xperia-first-success/`（Xperia 5.15 首次运行 V1–V21 实验史）
 
 ## 排障
 
