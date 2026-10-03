@@ -24,9 +24,9 @@ fails.
 give you a root shell (`adb root` on a userdebug/eng build, or an equivalent
 root). No manager app is needed.
 
-Do **not** use KernelSU, ReSukiSU, or KowSU, including the form that patches the
-kernel: a KernelSU-patched kernel interferes with the exploit. The script checks
-root and KernelSU for you and stops with a message if either is not satisfied.
+Do **not** use KernelSU, ReSukiSU, or KowSU, including the kernel-patching
+form: a patched kernel interferes with the tool. The script checks the required
+state for you and stops with a message if either is not satisfied.
 
 ## Step 1 — get the two values with the script
 
@@ -77,7 +77,7 @@ those values. Saving applies them to the next run; no rebuild is required.
 
 ## Step 3 — run and verify
 
-Run the exploit once, then read the first lines of the debug log
+Run it once, then read the first lines of the debug log
 (`Download/ghostlock-debug-log/<time>/*.log.txt`):
 
 ```

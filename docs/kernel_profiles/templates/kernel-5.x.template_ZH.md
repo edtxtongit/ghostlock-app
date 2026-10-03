@@ -9,13 +9,13 @@
 <tr><th>父项</th><th>子项</th><th>默认值</th><th>作用</th><th>影响</th><th>默认理由</th></tr>
 </thead>
 <tbody>
-<tr><th rowspan="6">身份与路线选择</th><td><code>schema_version</code></td><td><code>1</code></td><td>配置结构版本，固定为 1；格式升级时用它判断兼容性。</td><td rowspan="6">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内存破坏、黑屏或重启。</td><td rowspan="6">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
+<tr><th rowspan="6">身份与路线选择</th><td><code>schema_version</code></td><td><code>1</code></td><td>配置结构版本，固定为 1；格式升级时用它判断兼容性。</td><td rowspan="6">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内核不稳定、黑屏或重启。</td><td rowspan="6">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
 <tr><td><code>release</code></td><td></td><td>与设备 <code>uname -r</code> 完全一致的版本串；文件名和匹配都用它。</td></tr>
 <tr><td><code>kernel_major</code></td><td><code>5</code></td><td>内核主版本（5 或 6），供地址解析和合法性检查使用。</td></tr>
 <tr><td><code>kernel_phys_load</code></td><td></td><td>内核物理加载地址（0 时按 SoC 公式回退）。</td></tr>
 <tr><td><code>kernel_phys_offset</code></td><td></td><td>DRAM 基址 / linear-map <code>PHYS_OFFSET</code>，用于 image&rarr;direct-map 换算；取自 <code>/proc/iomem</code>，无法从 <code>boot.img</code> 提取。</td></tr>
 <tr><td><code>recommend_shizuku</code></td><td><code>1</code></td><td>是否建议在这台设备上通过 Shizuku 运行（0/1，默认 0，仅提示）。</td></tr>
-<tr><th rowspan="15">task_struct 结构偏移</th><td><code>task_struct.prio</code></td><td></td><td><code>task_struct.prio</code>，PI 优先级提升判定会读它。</td><td rowspan="15">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内存破坏、黑屏或重启。</td><td rowspan="15">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
+<tr><th rowspan="15">task_struct 结构偏移</th><td><code>task_struct.prio</code></td><td></td><td><code>task_struct.prio</code>，PI 优先级提升判定会读它。</td><td rowspan="15">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内核不稳定、黑屏或重启。</td><td rowspan="15">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
 <tr><td><code>task_struct.normal_prio</code></td><td></td><td>常规调度优先级字段。</td></tr>
 <tr><td><code>task_struct.sched_task_group</code></td><td></td><td>调度组指针 <code>sched_task_group</code> 的偏移。</td></tr>
 <tr><td><code>task_struct.pi_lock</code></td><td></td><td>PI 自旋锁 <code>pi_lock</code> 的偏移。</td></tr>
@@ -30,7 +30,7 @@
 <tr><td><code>task_struct.comm</code></td><td></td><td><code>comm</code> 偏移；leaf 方向探测会读它。</td></tr>
 <tr><td><code>task_struct.tasks</code></td><td></td><td>任务链表 <code>tasks</code> 偏移。</td></tr>
 <tr><td><code>task_struct.seccomp</code></td><td></td><td><code>seccomp</code> 偏移；W3 清零其中的 <code>mode</code>。</td></tr>
-<tr><th rowspan="14">credential 布局</th><td><code>cred.copy_size</code></td><td><code>176</code></td><td>伪造凭据时整体拷贝的字节数。</td><td rowspan="14">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内存破坏、黑屏或重启。</td><td rowspan="14">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
+<tr><th rowspan="14">cred 布局</th><td><code>cred.copy_size</code></td><td><code>176</code></td><td>拷贝 cred 结构时的字节数。</td><td rowspan="14">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内核不稳定、黑屏或重启。</td><td rowspan="14">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
 <tr><td><code>cred.usage_value</code></td><td><code>256</code></td><td><code>usage</code> 引用计数的目标值。</td></tr>
 <tr><td><code>cred.caps_offset</code></td><td><code>48</code></td><td>capability 集合在 <code>cred</code> 中的偏移。</td></tr>
 <tr><td><code>cred.caps_count</code></td><td><code>3</code></td><td><code>cred</code> 携带的 capability 数量。</td></tr>
@@ -44,7 +44,7 @@
 <tr><td><code>cred.ref1_image</code></td><td></td><td>第 2 个引用槽对应的内核镜像偏移（5.x）。</td></tr>
 <tr><td><code>cred.ref2_image</code></td><td></td><td>第 3 个引用槽对应的内核镜像偏移（5.x）。</td></tr>
 <tr><td><code>cred.ref3_image</code></td><td></td><td>第 4 个引用槽对应的内核镜像偏移（5.x）。</td></tr>
-<tr><th rowspan="13">waiter、堆与路线几何</th><td><code>route.multicast_waiter.compact_waiter</code></td><td><code>1</code></td><td>紧凑 waiter 布局标记（0/1），写在所属路由分支内（tcp 或 multicast）。</td><td rowspan="13">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内存破坏、黑屏或重启。</td><td rowspan="13">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
+<tr><th rowspan="13">waiter、堆与路线几何</th><td><code>route.multicast_waiter.compact_waiter</code></td><td><code>1</code></td><td>紧凑 waiter 布局标记（0/1），写在所属路由分支内（tcp 或 multicast）。</td><td rowspan="13">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内核不稳定、黑屏或重启。</td><td rowspan="13">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
 <tr><td><code>kernelsnitch.mm_struct_sz</code></td><td></td><td><code>mm_struct</code> 的 SLUB 大小，KernelSnitch 搜堆时使用。</td></tr>
 <tr><td><code>route.select_stack.waiter_shift</code></td><td></td><td>select 等待栈上 waiter 的相对位移（0 合法，负值常见）；作为回退时写在 <code>fallback.route.select_stack</code>。</td></tr>
 <tr><td><code>route.multicast_waiter.waiter_off</code></td><td><code>96</code></td><td>多播缓冲区中 waiter 的偏移（必须大于 0）。</td></tr>
@@ -52,7 +52,7 @@
 <tr><td><code>route.multicast_waiter.task_offset</code></td><td><code>48</code></td><td>缓冲区中任务字段的偏移。</td></tr>
 <tr><td><code>route.multicast_waiter.lock_offset</code></td><td><code>56</code></td><td>缓冲区中锁字段的偏移。</td></tr>
 <tr><td><code>kernelsnitch.collisions</code></td><td><code>8</code></td><td>KernelSnitch 需要的 futex 碰撞数量。</td></tr>
-<tr><th rowspan="10">内核相对符号</th><td><code>offset.init_task</code></td><td></td><td><code>init_task</code> 相对内核镜像基址的偏移。</td><td rowspan="11">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内存破坏、黑屏或重启。</td><td rowspan="11">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
+<tr><th rowspan="10">内核相对符号</th><td><code>offset.init_task</code></td><td></td><td><code>init_task</code> 相对内核镜像基址的偏移。</td><td rowspan="11">错误值会改变目标选择、结构边界或竞态时序，可能导致失败、死锁、内核不稳定、黑屏或重启。</td><td rowspan="11">该值保持 5.x 已验证基线，但不是稳定 ABI；新设备必须用同一目标镜像逐项复核。</td></tr>
 <tr><td><code>offset.init_cred</code></td><td></td><td><code>init_cred</code> 偏移；W2 修复会写它的 +8。</td></tr>
 <tr><td><code>offset.empty_zero_page</code></td><td></td><td><code>empty_zero_page</code> 偏移。</td></tr>
 <tr><td><code>offset.root_task_group</code></td><td></td><td><code>root_task_group</code> 偏移。</td></tr>
@@ -73,10 +73,10 @@
 <tr><th rowspan="8">W1/W2/W3 阶段</th><td><code>execution.stages.w1_attempts</code></td><td><code>15</code></td><td>W1 写入尝试上限。</td><td>增大提高机会但累积热量和破坏风险。</td><td>来自原 W1 循环常量。</td></tr>
 <tr><td><code>execution.stages.w1_settle_us</code></td><td><code>100000</code></td><td>W1 每轮后稳定等待。</td><td>决定验证前是否给内核状态足够时间。</td><td>原实现使用 100 毫秒。</td></tr>
 <tr><td><code>execution.stages.w1_scratch_repair_attempts</code></td><td><code>3</code></td><td>W1 临时区修复次数。</td><td>更多修复可能恢复状态，也可能重复触碰损坏对象。</td><td>原实现限制三次。</td></tr>
-<tr><td><code>execution.stages.w2_attempts</code></td><td><code>15</code></td><td>W2 凭证写入尝试上限。</td><td>影响提权成功机会、耗时和风险。</td><td>与旧 W2 循环一致。</td></tr>
+<tr><td><code>execution.stages.w2_attempts</code></td><td><code>15</code></td><td>W2 写入尝试上限。</td><td>影响成功机会、耗时和风险。</td><td>与旧 W2 循环一致。</td></tr>
 <tr><td><code>execution.stages.w2_settle_us</code></td><td><code>100000</code></td><td>W2 每轮后等待。</td><td>太短可能在凭证尚未可见时验证。</td><td>保留旧 100 毫秒。</td></tr>
 <tr><td><code>execution.stages.w3_chain_rounds</code></td><td><code>3</code></td><td>W3 整链重复轮数。</td><td>增大能覆盖偶发失配但延长高风险阶段。</td><td>原流程最多三轮。</td></tr>
-<tr><td><code>execution.stages.w3_attempts</code></td><td><code>6</code></td><td>每轮 W3 尝试数。</td><td>影响 seccomp 绕过机会与线程压力。</td><td>保留原六次上限。</td></tr>
+<tr><td><code>execution.stages.w3_attempts</code></td><td><code>6</code></td><td>每轮 W3 尝试数。</td><td>影响 seccomp 机会与线程压力。</td><td>保留原六次上限。</td></tr>
 <tr><td><code>execution.stages.w3_settle_us</code></td><td><code>50000</code></td><td>W3 尝试后等待。</td><td>控制验证时序和速度。</td><td>原实现使用 50 毫秒。</td></tr>
 <tr><th rowspan="3">TCP 零拷贝路线</th><td><code>execution.routes.tcp_zerocopy.attempts</code></td><td><code>2000</code></td><td>TCP 零拷贝路线爆破上限。</td><td>最大温升/耗时贡献之一；过低会降低命中率。</td><td>等于原路线硬编码上限。</td></tr>
 <tr><td><code>execution.routes.tcp_zerocopy.arm_sequence</code></td><td><code>16</code></td><td>准备阶段序列长度。</td><td>改变喷射/触发排列，错误值会错过窗口。</td><td>保留已验证的 16 步序列。</td></tr>
@@ -85,7 +85,7 @@
 <tr><td><code>execution.routes.select_stack.timeout_us</code></td><td><code>200000</code></td><td>单次 select 超时。</td><td>太短提前退出，太长拖慢失败恢复。</td><td>保持原 200 毫秒。</td></tr>
 <tr><td><code>execution.routes.select_stack.consumer_max_calls</code></td><td><code>1</code></td><td>消费者最大调用数。</td><td>多次调用改变原单次触发布局。</td><td>当前稳定路径只调用一次。</td></tr>
 <tr><td><code>execution.routes.select_stack.consumer_burst_calls</code></td><td><code>1</code></td><td>每批消费者调用数。</td><td>增大批量会改变调度和栈存活时间。</td><td>维持单调用批次。</td></tr>
-<tr><th rowspan="5">提权交接</th><td><code>execution.handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>向 KernelSU 交接前等待。</td><td>太短可能在权限/SELinux 状态未稳定时启动。</td><td>原流程等待 2 秒。</td></tr>
+<tr><th rowspan="5">交接</th><td><code>execution.handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>向 KernelSU 交接前等待。</td><td>太短可能在状态未稳定时启动。</td><td>原流程等待 2 秒。</td></tr>
 <tr><td><code>execution.handoff.module_poll_attempts</code></td><td><code>30</code></td><td>模块加载状态轮询次数。</td><td>与间隔共同决定 3 秒总窗口。</td><td>30×100 毫秒保持原 3 秒。</td></tr>
 <tr><td><code>execution.handoff.module_poll_interval_ms</code></td><td><code>100</code></td><td>模块轮询间隔。</td><td>更小增加唤醒，更大降低响应。</td><td>原粒度 100 毫秒。</td></tr>
 <tr><td><code>execution.handoff.enforce_poll_attempts</code></td><td><code>200</code></td><td>强制状态轮询次数。</td><td>与间隔共同决定 20 秒恢复窗口。</td><td>200×100 毫秒保留原 20 秒。</td></tr>

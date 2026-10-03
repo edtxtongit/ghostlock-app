@@ -21,7 +21,7 @@
 依赖该布局时才拒绝。
 
 非目标：
-- 不改 native 攻击代码、不改 GLK1/profile 二进制格式、不改 wire、不改 app；
+- 不改 native 执行代码、不改 GLK1/profile 二进制格式、不改 wire、不改 app；
 - 不为新的 family 增补 tcp 布局（`conf_route_geometry` 的 tcp 分支仍只认
   `STRUCT_OFFSETS_6_1`）；
 - 不为 `shift=13` 扩展 pselect 可控窗口。
@@ -101,7 +101,7 @@ flowchart TD
 
 ## 明确保留
 
-- native 攻击路径、`kernelsnitch/`、`LegacyProfileConverter.kt`；
+- native 核心路径、`kernelsnitch/`、`LegacyProfileConverter.kt`；
 - `pselect_waiter_shift_for` 的 family 默认值（非 `infeasible` 路径仍使用）；
 - profile 字段/route 列表与 `report.rs` 的 geometry 规则。
 

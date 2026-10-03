@@ -25,10 +25,10 @@
 <tr><th rowspan="8">W1/W2/W3 阶段</th><td><code>stages.w1_attempts</code></td><td><code>15</code></td><td>W1 写入尝试上限。</td><td>增大提高机会但累积热量和破坏风险。</td><td>来自原 W1 循环常量。</td></tr>
 <tr><td><code>stages.w1_settle_us</code></td><td><code>100000</code></td><td>W1 每轮后稳定等待。</td><td>决定验证前是否给内核状态足够时间。</td><td>原实现使用 100 毫秒。</td></tr>
 <tr><td><code>stages.w1_scratch_repair_attempts</code></td><td><code>3</code></td><td>W1 临时区修复次数。</td><td>更多修复可能恢复状态，也可能重复触碰损坏对象。</td><td>原实现限制三次。</td></tr>
-<tr><td><code>stages.w2_attempts</code></td><td><code>15</code></td><td>W2 凭证写入尝试上限。</td><td>影响提权成功机会、耗时和风险。</td><td>与旧 W2 循环一致。</td></tr>
+<tr><td><code>stages.w2_attempts</code></td><td><code>15</code></td><td>W2 写入尝试上限。</td><td>影响成功机会、耗时和风险。</td><td>与旧 W2 循环一致。</td></tr>
 <tr><td><code>stages.w2_settle_us</code></td><td><code>100000</code></td><td>W2 每轮后等待。</td><td>太短可能在凭证尚未可见时验证。</td><td>保留旧 100 毫秒。</td></tr>
 <tr><td><code>stages.w3_chain_rounds</code></td><td><code>3</code></td><td>W3 整链重复轮数。</td><td>增大能覆盖偶发失配但延长高风险阶段。</td><td>原流程最多三轮。</td></tr>
-<tr><td><code>stages.w3_attempts</code></td><td><code>6</code></td><td>每轮 W3 尝试数。</td><td>影响 seccomp 绕过机会与线程压力。</td><td>保留原六次上限。</td></tr>
+<tr><td><code>stages.w3_attempts</code></td><td><code>6</code></td><td>每轮 W3 尝试数。</td><td>影响机会与线程压力。</td><td>保留原六次上限。</td></tr>
 <tr><td><code>stages.w3_settle_us</code></td><td><code>50000</code></td><td>W3 尝试后等待。</td><td>控制验证时序和速度。</td><td>原实现使用 50 毫秒。</td></tr>
 <tr><th rowspan="3">TCP 零拷贝路线</th><td><code>routes.tcp_zerocopy.attempts</code></td><td><code>2000</code></td><td>TCP 零拷贝路线爆破上限。</td><td>最大温升/耗时贡献之一；过低会降低命中率。</td><td>等于原路线硬编码上限。</td></tr>
 <tr><td><code>routes.tcp_zerocopy.arm_sequence</code></td><td><code>16</code></td><td>准备阶段序列长度。</td><td>改变喷射/触发排列，错误值会错过窗口。</td><td>保留已验证的 16 步序列。</td></tr>
@@ -37,7 +37,7 @@
 <tr><td><code>routes.select_stack.timeout_us</code></td><td><code>200000</code></td><td>单次 select 超时。</td><td>太短提前退出，太长拖慢失败恢复。</td><td>保持原 200 毫秒。</td></tr>
 <tr><td><code>routes.select_stack.consumer_max_calls</code></td><td><code>1</code></td><td>消费者最大调用数。</td><td>多次调用改变原单次触发布局。</td><td>当前稳定路径只调用一次。</td></tr>
 <tr><td><code>routes.select_stack.consumer_burst_calls</code></td><td><code>1</code></td><td>每批消费者调用数。</td><td>增大批量会改变调度和栈存活时间。</td><td>维持单调用批次。</td></tr>
-<tr><th rowspan="5">提权交接</th><td><code>handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>向 KernelSU 交接前等待。</td><td>太短可能在权限/SELinux 状态未稳定时启动。</td><td>原流程等待 2 秒。</td></tr>
+<tr><th rowspan="5">交接</th><td><code>handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>交接前等待。</td><td>太短可能在状态未稳定时启动。</td><td>原流程等待 2 秒。</td></tr>
 <tr><td><code>handoff.module_poll_attempts</code></td><td><code>30</code></td><td>模块加载状态轮询次数。</td><td>与间隔共同决定 3 秒总窗口。</td><td>30×100 毫秒保持原 3 秒。</td></tr>
 <tr><td><code>handoff.module_poll_interval_ms</code></td><td><code>100</code></td><td>模块轮询间隔。</td><td>更小增加唤醒，更大降低响应。</td><td>原粒度 100 毫秒。</td></tr>
 <tr><td><code>handoff.enforce_poll_attempts</code></td><td><code>200</code></td><td>强制状态轮询次数。</td><td>与间隔共同决定 20 秒恢复窗口。</td><td>200×100 毫秒保留原 20 秒。</td></tr>

@@ -4,7 +4,7 @@
 
 本文面向尚自定提取配置但未成功运行 GhostLock 的联发科（MediaTek）用户。若设备已在内置支持列表中按 `uname -r` 精确匹配且运行正常，则无需阅读本文。
 
-联发科内核需要两个 GhostLock 无法自行推断的物理地址：`kernel_phys_load` 与 `kernel_phys_offset`。二者缺失或填写错误时，攻击会在 W1 阶段失败：连续重试至上限后终止。
+联发科内核需要两个 GhostLock 无法自行推断的物理地址：`kernel_phys_load` 与 `kernel_phys_offset`。二者缺失或填写错误时，会在 W1 阶段失败：连续重试至上限后终止。
 
 ```
 [*] W1 attempt 1/15
@@ -17,7 +17,7 @@
 
 `/proc/iomem` 与 `/proc/kallsyms` 仅 root 可读，因此设备需能提供 root shell（userdebug/eng 构建下的 `adb root`，或等效的 root），无需任何管理器应用。
 
-**请勿**使用 KernelSU、ReSukiSU 或 KowSU，**尤其不要使用通过修补内核启用 KernelSU 的方式**：被 KernelSU 修补过的内核会干扰攻击。脚本会自动检查 root 与 KernelSU，不满足时给出提示并停止。
+**请勿**使用 KernelSU、ReSukiSU 或 KowSU，**尤其不要使用通过修补内核启用 KernelSU 的方式**：被修补过的内核会干扰本工具。脚本会自动检查所需状态，不满足时给出提示并停止。
 
 ## 第 1 步 —— 用脚本取得两个取值
 
@@ -64,7 +64,7 @@ kernel_phys_offset = <值>
 
 ## 第 3 步 —— 运行并验证
 
-执行一次攻击，随后查看调试日志的开头若干行
+执行一次，随后查看调试日志的开头若干行
 （`Download/ghostlock-debug-log/<时间>/*.log.txt`）：
 
 ```

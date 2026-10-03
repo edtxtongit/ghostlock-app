@@ -31,10 +31,10 @@ measurements.
 <tr><th rowspan="8">W1/W2/W3 stages</th><td><code>stages.w1_attempts</code></td><td><code>15</code></td><td>W1 write-attempt cap.</td><td>More attempts add heat and corruption exposure.</td><td>Copied from the original loop bound.</td></tr>
 <tr><td><code>stages.w1_settle_us</code></td><td><code>100000</code></td><td>W1 post-attempt settle.</td><td>Controls stabilization before verification.</td><td>Preserves 100 ms.</td></tr>
 <tr><td><code>stages.w1_scratch_repair_attempts</code></td><td><code>3</code></td><td>W1 scratch-repair cap.</td><td>More repairs may recover or compound damage.</td><td>Matches the former three repairs.</td></tr>
-<tr><td><code>stages.w2_attempts</code></td><td><code>15</code></td><td>W2 credential-write cap.</td><td>Affects elevation probability, time, and risk.</td><td>Matches legacy W2.</td></tr>
+<tr><td><code>stages.w2_attempts</code></td><td><code>15</code></td><td>W2 write cap.</td><td>Affects success probability, time, and risk.</td><td>Matches legacy W2.</td></tr>
 <tr><td><code>stages.w2_settle_us</code></td><td><code>100000</code></td><td>W2 settle delay.</td><td>Too short may verify before visibility.</td><td>Preserves 100 ms.</td></tr>
 <tr><td><code>stages.w3_chain_rounds</code></td><td><code>3</code></td><td>Whole W3-chain rounds.</td><td>More rounds increase coverage and exposure.</td><td>Legacy cap is three.</td></tr>
-<tr><td><code>stages.w3_attempts</code></td><td><code>6</code></td><td>W3 attempts per round.</td><td>Changes bypass opportunity and contention.</td><td>Preserves six attempts.</td></tr>
+<tr><td><code>stages.w3_attempts</code></td><td><code>6</code></td><td>W3 attempts per round.</td><td>Changes opportunity and contention.</td><td>Preserves six attempts.</td></tr>
 <tr><td><code>stages.w3_settle_us</code></td><td><code>50000</code></td><td>W3 settle delay.</td><td>Controls verification timing and speed.</td><td>Preserves 50 ms.</td></tr>
 <tr><th rowspan="3">TCP zerocopy route</th><td><code>routes.tcp_zerocopy.attempts</code></td><td><code>2000</code></td><td>TCP zerocopy probe cap.</td><td>Major heat/time contributor; too low reduces hit rate.</td><td>Matches the original cap.</td></tr>
 <tr><td><code>routes.tcp_zerocopy.arm_sequence</code></td><td><code>16</code></td><td>Arm-sequence length.</td><td>Changes spray/trigger ordering; wrong values miss the window.</td><td>Preserves the validated 16-step sequence.</td></tr>
@@ -43,7 +43,7 @@ measurements.
 <tr><td><code>routes.select_stack.timeout_us</code></td><td><code>200000</code></td><td>Per-select timeout.</td><td>Balances premature exit and recovery time.</td><td>Preserves 200 ms.</td></tr>
 <tr><td><code>routes.select_stack.consumer_max_calls</code></td><td><code>1</code></td><td>Consumer call cap.</td><td>Multiple calls alter the proven layout.</td><td>The stable path is single-shot.</td></tr>
 <tr><td><code>routes.select_stack.consumer_burst_calls</code></td><td><code>1</code></td><td>Calls per consumer burst.</td><td>Changes scheduling and stack lifetime.</td><td>Preserves one-call bursts.</td></tr>
-<tr><th rowspan="5">Privilege handoff</th><td><code>handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>Pre-handoff settle.</td><td>Too short may dispatch before privilege/SELinux state settles.</td><td>Preserves two seconds.</td></tr>
+<tr><th rowspan="5">Handoff</th><td><code>handoff.pre_dispatch_settle_ms</code></td><td><code>2000</code></td><td>Pre-handoff settle.</td><td>Too short may dispatch before state settles.</td><td>Preserves two seconds.</td></tr>
 <tr><td><code>handoff.module_poll_attempts</code></td><td><code>30</code></td><td>Module-state poll count.</td><td>Together with the interval, forms the 3-second total window.</td><td>30×100 ms preserves three seconds.</td></tr>
 <tr><td><code>handoff.module_poll_interval_ms</code></td><td><code>100</code></td><td>Module poll interval.</td><td>Trades wakeups for latency.</td><td>Legacy cadence.</td></tr>
 <tr><td><code>handoff.enforce_poll_attempts</code></td><td><code>200</code></td><td>Enforcing-state poll count.</td><td>Together with the interval, defines the 20-second recovery window.</td><td>200×100 ms preserves twenty seconds.</td></tr>

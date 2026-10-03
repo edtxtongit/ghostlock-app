@@ -35,7 +35,7 @@ parsed as **HOCON**:
 - parsing happens on the Kotlin side (`HoconSupport`), then the typed binary
   struct crosses to native (section 9);
 - the app stores and exports HOCON; `ghostlock-extract --format conf` emits a
-  flattened, self-contained profile (credential/KernelSnitch constants inlined,
+  flattened, self-contained profile (cred/KernelSnitch constants inlined,
   no `include` lines) that imports through the normal path (the v1 JSON import
   path is section 11);
 - extractor output is a **candidate source**: it writes every field the image
@@ -50,7 +50,7 @@ parsed as **HOCON**:
 assets/kernel_profiles/<release>.conf     built-in profile (HOCON)
 assets/kernel_profiles/execution-tuning.conf   general execution tuning preset (all kernels)
 assets/kernel_profiles/execution-<route>.conf   per-route execution tuning preset (loaded by the resolver)
-assets/kernel_profiles/credential-6x.conf      6.x credential template
+assets/kernel_profiles/credential-6x.conf      6.x cred template
 assets/kernel_profiles/kernelsnitch-6x.conf    6.x KernelSnitch values
 assets/kernel_profiles/<major.minor>-template.conf  reference templates (registered in
                                              index; loadable from the debug page,
@@ -134,7 +134,7 @@ route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
 |---|:---:|:---:|:---:|
 | `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | required | required | required |
 | `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | required | required | required |
-| `kernel_major` ∈ {5,6}, `cred.copy_size`, `cred.caps_count`, and the credential-template bounds | required | required | required |
+| `kernel_major` ∈ {5,6}, `cred.copy_size`, `cred.caps_count`, and the cred-template bounds | required | required | required |
 | `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | required | | required |
 | `route.select_stack.waiter_shift` | | required (0 is valid) | |
 | `route.multicast_waiter.waiter_off` (>0), `route.multicast_waiter.buffer_size`, `route.multicast_waiter.task_offset`, `route.multicast_waiter.lock_offset`, `offset.empty_zero_page`, `kernelsnitch.mm_struct_sz`, `cred.ref_count` (>0) | | | required |
@@ -204,7 +204,7 @@ addresses.
 
 | Field | Meaning |
 |---|---|
-| `cred.copy_size` | Total bytes copied from the credential struct |
+| `cred.copy_size` | Total bytes copied from the cred struct |
 | `cred.usage_offset` / `cred.usage_value` | Refcount field offset / target value |
 | `cred.caps_offset` / `cred.caps_count` / `cred.caps_value` | Capability set offset / count / fill value |
 | `cred.ref_count` | Number of reference fields to repair (≤4) |
@@ -268,7 +268,7 @@ load these presets directly, so device profiles no longer `include` them:
   `execution-select-stack.conf` / `execution-multicast-waiter.conf`. When
   composing the native document, Kotlin fills in missing route groups with the
   defaults, so native always receives a complete `routes` object
-- `handoff`: root handoff and KernelSU load polling
+- `handoff`: handoff and KernelSU load polling
 
 ## 6. Validation and feedback
 
@@ -276,7 +276,7 @@ Validation happens in Kotlin (`AndroidProfileConfigController.validateProfileFie
 
 1. It checks the common fields and the selected route against the matrix in
    section 3. Missing (`null`) or zero required fields and out-of-range
-   combinations (credential / multicast bounds) are recorded in
+   combinations (cred / multicast bounds) are recorded in
    `ProfileConfig.invalidPaths`.
 2. On the override pages, invalid entries are shown with a red label (unfilled
    counts as invalid); overridden and valid entries are yellow.
@@ -285,7 +285,7 @@ Validation happens in Kotlin (`AndroidProfileConfigController.validateProfileFie
    example, a `select_stack` fallback needs
    `fallback.route.select_stack.waiter_shift`; 0 is valid).
 4. The home-screen **Run** button is disabled while `invalidPaths` is non-empty;
-   tapping it asks you to fix the red entries. Even if you bypass that,
+   tapping it asks you to fix the red entries. Even if you ignore that,
    `runExploit` blocks before starting native and writes to the log.
 5. Native no longer validates geometry; it only parses the v2 binary and
    executes the component selection and fields it was given.
@@ -367,7 +367,7 @@ and there is no legacy decode.
    required fields. When `fallback.to` names a target, fill the
    `fallback.route` branch the same way.
    Pull shared core values in with `include` instead of copying:
-   `credential-6x.conf` (6.x credential template) and `kernelsnitch-6x.conf`
+   `credential-6x.conf` (6.x cred template) and `kernelsnitch-6x.conf`
    (6.x collisions). Execution tuning (`execution-tuning.conf` /
    `execution-<route>.conf`) is loaded by the resolver as a preset; don't
    `include` it in a device profile.

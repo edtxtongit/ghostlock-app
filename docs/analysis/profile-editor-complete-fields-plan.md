@@ -31,7 +31,7 @@
 4. 写入/导出完整保留每一项（含 `null`）。
 
 约束（非目标）：
-- 不改攻击路径（waiter/race/payload/route/exec 流程）、不改 `src/core/` 任何 native 解析逻辑。
+- 不改核心路径（session/route/exec 流程）、不改 `src/core/` 任何 native 解析逻辑。
 - 不新增 route / 组件；不改 GLK1 wire 与 HOCON 传输格式版本（仍为 v2）。
 - 不动 `kernelsnitch/`、`LegacyProfileConverter.kt` 的 v1 转换、规范中的「明确保留」清单。
 - 不改变现有内置 profile 的**正确数值**，只补齐字段与表示。
@@ -47,7 +47,7 @@
 | `app/src/main/kotlin/.../domain/model/GhostlockModels.kt` | 定义「route 可编辑字段全集」常量（route 几何 + 公共几何） | 单一权威 |
 | `profile-core/.../data/NativeProfile.kt` | 明确 `null` 的写入语义（见决策点 D3） | 跨层契约 |
 | `profile-core/.../data/HoconSupport.kt` | 核对 `render` 对 `null` 的输出（已支持，补测试） | 导出保留 null |
-| `src/core/route/route_policy.hpp` | `MulticastPolicy::allows_fallback = true`（5.x mcast→select 回退） | 放开 5.15 fallback（攻击路径，见专节） |
+| `src/core/route/route_policy.hpp` | `MulticastPolicy::allows_fallback = true`（5.x mcast→select 回退） | 放开 5.15 fallback（核心路径，见专节） |
 | `docs/kernel_profiles/PROFILE_SCHEMA*.md` | 回写字段完整性规则 | 文档同步 |
 | `README*.md`（如需） | 说明生成的 conf 为完整字段 | 双语同步 |
 
@@ -68,7 +68,7 @@ extractor conf --(十进制 + null 占位)--> HOCON(含每一项) --(Number/null
 ```
 
 不变量：
-- 攻击关键路径与 native 解析不变。
+- 核心执行路径与 native 解析不变。
 - v2 的「键是否出现」语义保持不变；`null` 与「提供了 0」的区分由决策点 D3 统一定义。
 
 ## 兼容性与回滚
@@ -130,7 +130,7 @@ GLK1 v2 是 Kotlin↔native 的**传输（wire）格式**，也是内置预编�
   - (a) 仅允许 multicast 在特定 clean 失败点回退，且回退后不进入 multicast 专属 W2 快修；
   - (b) 为 fallback 增加独立 capability 判定，禁止跨 primitive 的 W2/W3 复用。
   须在专节补充控制流图与不变量后再实现。
-- 验证门槛（因触及攻击路径，按 AGENTS）：`cmp_disasm` 8 函数 + 冷机真机门禁 + 归档。
+- 验证门槛（因触及核心路径，按 AGENTS）：`cmp_disasm` 8 函数 + 冷机真机门禁 + 归档。
 - 目前**待确认**：是否先只做 extractor/UI/HOCON 三项（不触 native），把 native fallback 作为独立
   批次，待上述设计问题定稿后再改 `route_policy.hpp`。
 
@@ -140,7 +140,7 @@ GLK1 v2 是 Kotlin↔native 的**传输（wire）格式**，也是内置预编�
    `retry_write_stage`/`w1`/`w1_scratch_repair` 按 `M::multicast`、`M::w2_fast_repair` 分支
    （`cve_2026_43499_backend.cpp:73/83/346/393`）。multicast 主 route 在 `run_route` 内 fallback 到
    select 后，backend 仍按 multicast 编译分支执行 → 语义错配。要安全打开 `MulticastPolicy.allows_fallback`，
-   需让 backend 按**运行时实际使用的 route** 分支（route-aware），或限制回退点。属攻击路径改动。
+   需让 backend 按**运行时实际使用的 route** 分支（route-aware），或限制回退点。属核心路径改动。
 2. **（已澄清，非阻塞）** `route.tcp_zerocopy.compact_waiter` 经
    `ProfileResolver.nativeValue` 的 branchField 映射落到 native `misc.compact_waiter`
    （`binary.cpp:113` 的 `OPT("compact_waiter", misc.compact_waiter)`），与 6.1 内置 profile 一致，
@@ -159,4 +159,4 @@ GLK1 v2 是 Kotlin↔native 的**传输（wire）格式**，也是内置预编�
 - [x] 写入/导出保留 null（D3=A：OPT 字段缺失不写键，PLAIN 字段无 null 概念，现状已满足）
 - [ ] native：route-aware fallback（deferred，见阻塞项 1）
 - [x] 主机验证：`cargo test`（34）、`:app:testDebugUnitTest`、`:profile-core:test` 全绿
-- [ ] 真机门禁（改动未触 native 攻击路径，但 profile 字段完整性需真机确认一次）
+- [ ] 真机门禁（改动未触 native 核心路径，但 profile 字段完整性需真机确认一次）

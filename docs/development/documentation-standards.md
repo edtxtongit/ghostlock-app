@@ -39,7 +39,7 @@
 缺失的清理路径和矛盾的边界一眼可见（画图过程本身就是设计审查）。
 
 - **什么时候必须画**（L 级改动）：新增/修改 route、跨层契约（Kotlin↔native）、会话与资源所有权、
-  攻击阶段机、状态与清理/回滚边界。
+  执行阶段状态机、状态与清理/回滚边界。
 - **图种**：结构（类、持有关系）用类图或组件图；控制流用流程图/时序图；状态与出口用状态图；
   数据流用 flowchart。
 - **用 Mermaid**：文本化，可进 git、可评审、可 diff、可随代码更新；图更新与代码同一批次。
@@ -73,7 +73,7 @@
 ```markdown
 # <编号> 真机门禁：<主题>（<route>）— PASS/FAIL
 对应提交 `<hash>`（`<commit message>`）
-## 设备与入口   # 型号、kernel uname -r、入口、uid/selinux/seccomp、home
+## 设备与入口   # 型号、kernel uname -r、入口、状态字段、home
 ## 结果         # route_done 计数与 status/clean/step/errno、child is root、handoff、panic 与否
 ## 日志         # 文件名（与设备 Download/ghostlock-debug-log/<时间>/ 对应）
 ## 变更说明     # 本次验证针对的行为差异

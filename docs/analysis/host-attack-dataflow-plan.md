@@ -1,32 +1,32 @@
-# host 攻击数据流测试 计划（2026-10-01）
+# host 执行数据流测试 计划（2026-10-01）
 
 ## 现状与基线
 
-- 攻击数据流入口是 `runtime::Pipeline<F,B,M>::run`（`route/pipeline.hpp`）：先
+- 执行数据流入口是 `runtime::Pipeline<F,B,M>::run`（`route/pipeline.hpp`）：先
   `Backend::run<M>`（`cve_2026_43499_backend.cpp` 的 W1→W2/W3 chain），再把
   `VictimChain` 交给 `Frontend::run`（`root_child_frontend.cpp` 的 handoff）。
-- 这些步骤直接调用副作用原语（真攻击 / 真内核 / 真子进程）：
+- 这些步骤直接调用副作用原语（真执行 / 真内核 / 真子进程）：
   `attack::*`、`support::prepare_good_kernel_page`、`route::middleware::run_middleware_route`
   （真 PI race）、`victim::spawn_victim`（fork）、`victim::verify_*`、
   `handoff_probe_run`、`config::runtime_config_snapshot()`。
 - host 侧目前只有 `backend_contract_test`（只验证 concept）与
   `component_catalog_test`，**没有任何测试执行 `run<M>`**。
-- 约束（AGENTS.md）：攻击路径改动必须 `cmp_disasm` 8 函数；只有
+- 约束（AGENTS.md）：核心路径改动必须 `cmp_disasm` 8 函数；只有
   `g_exploit_session` 一个可变全局；`ExploitSession` 字段布局固定；PI 窗口不得引入
   间接分派。
 
 ## 目标与约束
 
-目标：在 host 上把整个攻击**数据流/控制流**跑通并可断言——W1→W2/W3 chain→handoff
-一直到 `RunResult::Completed`——同时把真实攻击原语换成 nop、`verify*` 与 route 结果可脚本化。
+目标：在 host 上把整个执行**数据流/控制流**跑通并可断言——W1→W2/W3 chain→handoff
+一直到 `RunResult::Completed`——同时把真实执行原语换成 nop、`verify*` 与 route 结果可脚本化。
 
 非目标：
-- 不改 Android 攻击路径的任何源码（`attack/`、`route/`、`session/` 的生产 TU 不动），
+- 不改 Android 核心路径的任何源码（`attack/`、`route/`、`session/` 的生产 TU 不动），
   因此 Android 二进制不变、`cmp_disasm` 天然 IDENTICAL；
 - 不新增生产可变全局、不改 `ExploitSession` 字段布局；
 - 不在 host 上做任何真实内核写入、fork 真实受害进程或装载 KernelSU。
 
-## 设计：链接期 stub（不改攻击路径源码）
+## 设计：链接期 stub（不改核心路径源码）
 
 host 测试直接编译**未修改**的 `cve_2026_43499_backend.cpp` 与
 `root_child_frontend.cpp`，然后**用 host stub 替换**它们依赖的副作用 TU（ODR 替换）。
@@ -91,7 +91,7 @@ host：同一源码序列不变，只是这些调用落到 stub，返回脚本�
 因此可断言数据流。
 
 不变量：
-- 生产源码零改动 → Android 构建与攻击函数字节不变；
+- 生产源码零改动 → Android 构建与核心函数字节不变；
 - `run<M>` 的语句顺序、日志文本、重试/回退逻辑不变；
 - stub 只在测试链接集里出现。
 
@@ -127,7 +127,7 @@ host：同一源码序列不变，只是这些调用落到 stub，返回脚本�
 ## 明确保留
 
 - 生产 `attack/`、`route/`、`session/` 源码与 `ExploitSession` 布局；
-- `cmp_disasm` 基线（本轮不因该改动触发，但按攻击路径惯例保留）；
+- `cmp_disasm` 基线（本轮不因该改动触发，但按核心路径惯例保留）；
 - `kernelsnitch/`、`LegacyProfileConverter.kt` 与"明确保留"清单。
 
 ## 进度

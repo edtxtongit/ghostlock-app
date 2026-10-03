@@ -22,9 +22,9 @@ GhostLock 用 `uname -r` 精确匹配内核版本：匹配不到时应用会直�
 - `index.conf`：内置内核清单。新 profile 最终要登记到这里。
 - `<uname-r>.conf`：一款内核一份完整 profile，文件名必须与 `uname -r` 完全一致。
 - `execution-tuning.conf`：所有内核共用的调优值。
-- `execution-<route>.conf`：各攻击路线（route）专属的调优值。
+- `execution-<route>.conf`：各执行路线（route）专属的调优值。
   这些 preset 由 resolver 加载；设备 profile 不 include。
-- `credential-6x.conf`、`kernelsnitch-6x.conf`：6.x 内核共享的凭据模板与 KernelSnitch 参数。
+- `credential-6x.conf`、`kernelsnitch-6x.conf`：6.x 内核共享的 cred 模板与 KernelSnitch 参数。
 - `*-template.conf`：带逐字段注释的参考模板。可以在调试页手动加载，但不参与设备匹配。
 - `docs/kernel_profiles/templates/`：按大版本整理的模板文档。
 
@@ -58,10 +58,10 @@ GhostLock 用 `uname -r` 精确匹配内核版本：匹配不到时应用会直�
    build/extract/release/ghostlock-extract boot.img --format conf --out profile.conf
    ```
 
-   `--format conf` 输出 flatten（无 `include`、6.x 凭据/KernelSnitch 常量内联）的
+   `--format conf` 输出 flatten（无 `include`、6.x cred/KernelSnitch 常量内联）的
    自包含 profile：镜像实际获得多少字段就写出多少，未获得的字段省略，不会用相邻内核族的
    猜测值补齐。因此它是**候选底稿**，可直接作为新 profile 的起点，但导入后由 App 校验
-   缺失字段并在执行前拦截，生成成功不代表可用。5.x 的凭据引用修复与 multicast 几何
+   缺失字段并在执行前拦截，生成成功不代表可用。5.x 的 cred 引用修复与 multicast 几何
    也会从镜像与 BTF 自动推导。工具支持 `boot.img`（可附带
    `xbl_config.img`）、完整 OTA zip，或指向它们的 `http(s)` 链接。kallsyms 可以显式传
    `--kallsyms`，省略时会尝试恢复镜像内嵌表。`pselect_waiter_shift` 和
@@ -87,7 +87,7 @@ GhostLock 用 `uname -r` 精确匹配内核版本：匹配不到时应用会直�
    ```
 
 8. **真机验证。**
-   用 `./gradlew installDebug` 装到设备上，在相同环境、固定核心、单一攻击路线下反复测试。
+   用 `./gradlew installDebug` 装到设备上，在相同环境、固定核心、单一执行路线下反复测试。
    测试前先让机身降温，避免 CPU 降频影响结果。未通过真机验证前，不要把它标记为“已支持”。
 
 ## 在 App 内快速修改配置
@@ -103,7 +103,9 @@ GhostLock 用 `uname -r` 精确匹配内核版本：匹配不到时应用会直�
 
 `defaults.json` → 内置 release JSON → 用户稀疏 override → UI 显式核心选择。后层覆盖前层。Kotlin 生成单个 `active-profile.json`，Native 不再搜索或合并配置。
 
+## 注意事项
+
 - 模板里的 `off_* = 0` 是相对内核镜像基址的符号偏移，必须自己提取。
-- task/cred/multicast 布局写错可能造成任意内核内存破坏、黑屏或重启。
+- task/cred/multicast 布局写错可能造成内核不稳定、黑屏或重启。
 - 调大 `execution` 的尝试次数、调短等待时间会明显升温，并可能降低成功率。
 - 新 profile 在通过真机验证前，不要提交为“已支持”。

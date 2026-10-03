@@ -30,11 +30,11 @@
 3. extractor/文档/UI 同步：可输出该字段（默认 `null`），编辑页可见，schema 记录语义。
 
 非目标：
-- 不改 `kernel_phys_load` 语义、不改 wire 版本、不改 route/攻击阶段。
+- 不改 `kernel_phys_load` 语义、不改 wire 版本、不改 route/执行阶段。
 - 不做“运行时自动推导 DRAM base”（单独议题）。
 
 约束：
-- 属**攻击关键路径**（地址解析/资源准备）：需 `cmp_disasm` 8 函数 + 真机门禁 + 归档。
+- 属**核心执行路径**（地址解析/资源准备）：需 `cmp_disasm` 8 函数 + 真机门禁 + 归档。
 - `P0_PHYS_OFFSET` 仍在 `util.cpp` 日志中出现，需一并改到 `addresses.phys_offset()`，否则日志与行为不一致。
 
 ## 改动清单（逐文件）
@@ -76,7 +76,7 @@ profile(kernel_phys_offset) ─> phys_offset  (缺省回退 P0_PHYS_OFFSET)
 不变量：
 - 未提供 `kernel_phys_offset` 的所有现有设备行为**逐字节不变**（回退 `P0_PHYS_OFFSET`）。
 - image→direct-map 的既有先后关系不变；仅把常量替换为可配值。
-- 攻击阶段机、waiter/PI 生命周期、payload 布局不变。
+- 执行阶段状态机、PI 生命周期与数据布局不变。
 
 ## 兼容性与回滚
 
@@ -91,7 +91,7 @@ profile(kernel_phys_offset) ─> phys_offset  (缺省回退 P0_PHYS_OFFSET)
 | native host | `make -C src native-host-tests` | 新增 `address_space` 用例：profile 提供 offset → 正确 direct；缺省 → 0x80000000 路径不变 |
 | 编解码一致 | `./gradlew :profile-core:test` / `:app:testDebugUnitTest` | 字段双侧一致；round-trip 含 `kernel_phys_offset` |
 | extractor | `(cd tools/extract_rs && cargo test)` | conf 含 `kernel_phys_offset`（默认 null） |
-| 反汇编 | `python3 tools/cmp_disasm.py <baseline> build/native/ghostlock` | 8 攻击函数 IDENTICAL 或已复核注解差异 |
+| 反汇编 | `python3 tools/cmp_disasm.py <baseline> build/native/ghostlock` | 8 核心函数 IDENTICAL 或已复核注解差异 |
 | 真机门禁 | 冷机、固定 CPU 对、单 route | W1 不再出现 `target 0x0`；route 命中；归档 `PROFILE-*` |
 
 ## 明确保留
@@ -103,7 +103,7 @@ profile(kernel_phys_offset) ─> phys_offset  (缺省回退 P0_PHYS_OFFSET)
 ## 反汇编核对记录（cmp_disasm）
 
 - 基线：`git stash` 回退本次改动后 `buildGhostlockNative` 产出的二进制；候选：含改动构建。
-- 结果（8 攻击函数）：
+- 结果（8 核心函数）：
   - `owner_thread` / `consumer_thread` / `run_main_route_threads` / `do_kernel5_fake_lock_route` / `do_one_write`：IDENTICAL (strict)。
   - `multicast_owner_worker` / `multicast_waiter_worker`：两边都不存在（未实例化）。
   - `waiter_thread`：**DIFF（base=895 / cur=892）**——已复核：

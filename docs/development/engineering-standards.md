@@ -34,8 +34,8 @@ Explore（只读调查） → Design（设计产物） → Implement（最小实
 | 级别 | 判定 | 设计产物（最小） |
 |---|---|---|
 | **S** | 单文件内的注释/拼写/纯格式；文档笔误 | 无（直接改） |
-| **M** | 普通缺陷修复、非攻击路径的功能/重构、测试补充、文档结构性更新 | 一段改动说明：动机、影响文件、行为差异、验证计划（可写在任务描述或提交信息中） |
-| **L** | 攻击关键路径（waiter/race/payload/route/exec 流程）；配置文件格式/wire 协议；跨 Native↔Kotlin 契约；公共数据结构；构建系统；新增 route | **计划文档**（模板见 `documentation-standards.md`）：现状与基线 commit、目标与约束、改动清单（逐文件）、数据流/控制流差异、兼容性与回滚、验证矩阵、明确保留项 |
+| **M** | 普通缺陷修复、非核心路径的功能/重构、测试补充、文档结构性更新 | 一段改动说明：动机、影响文件、行为差异、验证计划（可写在任务描述或提交信息中） |
+| **L** | 核心执行路径（session/route/exec 流程）；配置文件格式/wire 协议；跨 Native↔Kotlin 契约；公共数据结构；构建系统；新增 route | **计划文档**（模板见 `documentation-standards.md`）：现状与基线 commit、目标与约束、改动清单（逐文件）、数据流/控制流差异、兼容性与回滚、验证矩阵、明确保留项 |
 
 L 级改动**必须**先给出设计并获得用户认可，再写代码。历史范例：
 `DECOUPLING_PLAN.md`（Goals and constraints → Phase 0 基线 → 逐项 checkbox）；
@@ -45,8 +45,8 @@ L 级改动**必须**先给出设计并获得用户认可，再写代码。历�
 
 | 改动 | 主机测试 | NDK 构建 | lint-tidy | `cmp_disasm` | 真机门禁 |
 |---|---|---|---|---|---|
-| S/M 非攻击路径 | 必须 | 必须零警告 | 必须 0 findings | 可跳过 | 不需要 |
-| M 触及攻击路径 | 必须 | 必须零警告 | 必须 0 findings | **必须**（8 函数） | 必须（见 §8.3） |
+| S/M 非核心路径 | 必须 | 必须零警告 | 必须 0 findings | 可跳过 | 不需要 |
+| M 触及核心路径 | 必须 | 必须零警告 | 必须 0 findings | **必须**（8 函数） | 必须（见 §8.3） |
 | L | 必须 | 必须零警告 | 必须 0 findings | **必须** | 必须，且归档证据 |
 
 命令见 `AGENTS.md` 与 §8。
@@ -172,10 +172,10 @@ TargetProfile（不可变，拥有值）→ resolve_address_space() → Resolved
 
 ## 4. 控制流规范
 
-### 4.1 攻击阶段机
+### 4.1 执行阶段状态机
 
 ```
-setup → W1（SELinux）→ W2（凭据）→ W3（seccomp）→ handoff（root child / KernelSU）
+setup → W1 → W2 → W3 → handoff（子进程 / KernelSU）
 ```
 
 - 每阶段返回结构化结果，重试统一走 `retry_write_stage()`；**不得**在 route 或阶段里各自实现重试。
@@ -195,7 +195,7 @@ setup → W1（SELinux）→ W2（凭据）→ W3（seccomp）→ handoff（root
 
 | 机制 | 使用场景 | 示例 |
 |---|---|---|
-| `FatalError` | **仅**攻击前致命错误，抛出点自行记录日志，顶层直接退出 | profile 校验失败 |
+| `FatalError` | **仅**执行前致命错误，抛出点自行记录日志，顶层直接退出 | profile 校验失败 |
 | `std::expected`/`Result<T>` | 可恢复失败（带 errno 语义） | I/O、解析 |
 | `Status`(bool) | 无数据的成败 | 阶段推进 |
 | `RouteStatus` | route 结果：OK / fallback-safe / dirty | 只经 `status` 汇报 |
@@ -220,7 +220,7 @@ setup → W1（SELinux）→ W2（凭据）→ W3（seccomp）→ handoff（root
 - 新类型用 `PascalCase` + `final`；无 invariant 的聚合用 `struct`；有 invariant 的用 `class`。
 - 小值类型（句柄、状态）：`noexcept`、`[[nodiscard]]`、可平凡复制时加 `static_assert`（`BorrowedFd` 模式）。
 - 视图/容器按用途选型：`std::span`（借用序列）、`std::array`（固定尺寸）、`std::string_view`、
-  `std::optional`、`std::expected`；禁止自造可变长 VLA（攻击路径已全部替换为 page-bounded 缓冲）。
+  `std::optional`、`std::expected`；禁止自造可变长 VLA（核心路径已全部替换为 page-bounded 缓冲）。
 - 整数运算：显式宽度（`int32_t`/`uint32_t`…）；混用符号必须显式转换并通过 `-Wsign-conversion`。
 
 ### 5.3 不可变性
@@ -302,20 +302,20 @@ ISO/IEC/IEEE 42010 / 15289 / 2651x、Diátaxis、DITA 信息类型、Carroll Min
    双侧一致性；新增数据结构/route 必须补测试（登记进 `NATIVE_HOST_TESTS`）；无对应测试的功能变更
    视为不完整。
 2. **Kotlin 单测**（`./gradlew :app:testDebugUnitTest`）与 **Rust 测试**（`cargo test --release`）。
-3. **形状对比**（攻击路径专用，§8.2）。
+3. **形状对比**（核心路径专用，§8.2）。
 4. **真机门禁**（§8.3）。
 
-### 8.2 攻击函数形状对比
+### 8.2 核心函数形状对比
 
 ```sh
 python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
 ```
 
-- 覆盖 8 个攻击函数（`TARGETS`）；判定：`IDENTICAL (strict)` 或**已复核并记录的注解差异**
-  （如允许的 `LAYOUT-SHIFT` 单地址注解）。新攻击函数必须加入 `TARGETS`。
+- 覆盖 8 个核心函数（`TARGETS`）；判定：`IDENTICAL (strict)` 或**已复核并记录的注解差异**
+  （如允许的 `LAYOUT-SHIFT` 单地址注解）。新核心函数必须加入 `TARGETS`。
 - 报告与结论写入提交信息/计划文档（历史范例：批次报告中逐函数列出 IDENTICAL）。
 
-### 8.3 真机门禁（攻击路径改动必须）
+### 8.3 真机门禁（核心路径改动必须）
 
 **前置**：冷机、固定 CPU 对、单 route、KernelSU 未加载的干净启动、设备状态记录（uptime）。
 **判定**：`route_done status=0 clean=1/1`、`child is root!`、`exploit complete`、handoff `KernelSU ready`、
@@ -348,13 +348,13 @@ python3 tools/cmp_disasm.py <baseline-binary> build/native/ghostlock
 
 **完成后**
 - [ ] 按级别跑满 §1.3 门槛命令，保留原始输出
-- [ ] 攻击路径：`cmp_disasm` + 真机门禁 + 门禁记录归档
+- [ ] 核心路径：`cmp_disasm` + 真机门禁 + 门禁记录归档
 - [ ] 汇报时给出**证据**（命令、结果、文件路径），不写"应该没问题"
 - [ ] 未经明确要求：不 commit、不 push、不建 PR
 
 **禁止模式**（历史失败模式）
 - 厨房水槽式改动（多主题混杂、顺带重构）
-- 无设计直接改攻击路径；改了不跑形状对比
+- 无设计直接改核心路径；改了不跑形状对比
 - 无证据宣称验证通过；用单次结果推翻既有归因
 - 把历史文档当"过时垃圾"删除而不留索引；重复造已存在的抽象
 

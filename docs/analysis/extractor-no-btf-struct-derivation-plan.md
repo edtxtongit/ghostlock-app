@@ -105,7 +105,7 @@ flowchart TD
 - 旧：`btf=None` ⇒ `resolve_structs` 全 `None` ⇒ conf 只有符号/公共块。
 - 新：`btf=None` ⇒ 先跑推导 ⇒ 命中字段有值、未命中仍 `None`；BTF 存在时路径完全不变。
 - 不变量：字段来源不改变 profile 字节语义；推导值不写入任何"已验证"标记；BTF 路径与推导路径
-  产出同一个 `ResolvedStructs` 形状。攻击 runtime 与 wire 格式零改动。
+  产出同一个 `ResolvedStructs` 形状。执行 runtime 与 wire 格式零改动。
 
 ## 兼容性与回滚
 

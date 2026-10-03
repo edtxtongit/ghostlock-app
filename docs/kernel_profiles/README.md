@@ -25,9 +25,9 @@ Every built-in profile lives in `app/src/main/assets/kernel_profiles/`:
 - `<uname-r>.conf` — one complete profile per kernel; the file name must match
   `uname -r` exactly.
 - `execution-tuning.conf` — tuning shared by every kernel.
-- `execution-<route>.conf` — tuning for a single attack route. The resolver
+- `execution-<route>.conf` — tuning for a single execution route. The resolver
   loads these presets; device profiles don't `include` them.
-- `credential-6x.conf`, `kernelsnitch-6x.conf` — credential template and
+- `credential-6x.conf`, `kernelsnitch-6x.conf` — cred template and
   KernelSnitch values shared by 6.x kernels.
 - `*-template.conf` — annotated reference templates. You can load them manually
   from the debug page, but they never participate in device matching.
@@ -67,12 +67,12 @@ and doesn't repeat the field reference.
    ```
 
    `--format conf` writes a flattened, self-contained profile (no `include`
-   lines, the 6.x credential/KernelSnitch constants inlined) with every field
+   lines, the 6.x cred/KernelSnitch constants inlined) with every field
    the image actually yields and the rest omitted; it never fills gaps from a
    neighbouring kernel family's guesses. Treat it as a **candidate seed**: it
    can start the new profile directly, but the app validates missing fields
    after import and blocks execution, so a successful generation does not mean
-   the profile is usable. On 5.x it also derives the credential reference
+   the profile is usable. On 5.x it also derives the cred reference
    repair and the multicast geometry from the image and its BTF. The tool accepts a `boot.img` (optionally with
    `xbl_config.img`), a complete OTA zip, or an `http(s)` URL pointing at one.
    Pass `--kallsyms` to supply a symbol table explicitly, or omit it to recover
@@ -105,7 +105,7 @@ and doesn't repeat the field reference.
 
 8. **Verify on a real device.**
    Install with `./gradlew installDebug` and test repeatedly in the same
-   environment, on fixed cores, with a single attack route. Let the device cool
+   environment, on fixed cores, with a single execution route. Let the device cool
    down first so CPU throttling doesn't skew the results. Don't mark a new
    profile as "supported" until it passes on-device verification.
 
@@ -128,11 +128,12 @@ imported offsets. See section 7 of the
 Adding a kernel to the built-in set still follows the steps above and commits to
 assets.
 
+
 ## Safety notes
 
 - `off_* = 0` in a template is a symbol offset relative to the kernel image
   base; you must extract the real value.
-- A wrong task/cred/multicast layout can corrupt arbitrary kernel memory, blank
+- A wrong task/cred/multicast layout can destabilize the kernel, blank
   the screen, or reboot the device.
 - Raising `execution` attempt counts or shortening waits increases heat and can
   lower the success rate.

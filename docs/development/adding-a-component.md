@@ -3,7 +3,7 @@
 GhostLock 的执行链由 `Pipeline<Frontend, Backend, Middleware>` 在编译期固定：
 
 - **frontend**：启动/交接（当前 `root_child`；`umh_forward` 为声明但不可用的占位）；
-- **backend**：漏洞原语与写入步骤（当前 `cve_2026_43499`；`cve_2026_64560` 为纯头占位，不可用）；
+- **backend**：内存写入步骤（当前 `cve_2026_43499`；`cve_2026_64560` 为纯头占位，不可用）；
 - **middleware**：一次写的 route（`select_stack` / `tcp_zerocopy` / `multicast_waiter`）。
 
 组件如何被选择、组合与执行，由以下唯一权威决定：
@@ -67,7 +67,7 @@ GhostLock 的执行链由 `Pipeline<Frontend, Backend, Middleware>` 在编译期
 - **能力**（`static constexpr bool`，编译期）：`multicast`、`w2_fast_repair`、`w3_exact_target`、
   `tcp_payload_layout`、`allows_fallback`。只写需要为 `true` 的，其余继承默认。
 - **有副作用的 hook**：`w2_fast_repair_prebuild/activate(session)`。默认由 `RoutePolicyDefaults`
-  提供；覆写时在该 unit 提供定义并让声明带 `[[gnu::noinline]]`（防止 LTO 把 route 实现内联进攻击函数）。
+  提供；覆写时在该 unit 提供定义并让声明带 `[[gnu::noinline]]`（防止 LTO 把 route 实现内联进核心函数）。
 - **纯查询**（如一次性 route 的 W1 重试上限、是否需要 scratch 修复、W3 是否精确命中）：不需要 hook，
   在 backend 步骤内用 `if constexpr (M::…)` + profile 运行时值表达。
 
@@ -130,7 +130,7 @@ case DispatchTarget::RootChild_Cve43499_FooWaiter: {
    `BackendExecution` / `Pipeline::target`（新 frontend/backend/middleware）。
 5. `foo_route_test.cpp`：构造/析构/几何（middleware），并登记进 `NATIVE_HOST_TESTS`。
 6. `profile_binary_test.cpp`：wire 解码/拒绝（新 id）。
-7. 新增攻击路径函数时，把它加进 `tools/cmp_disasm.py` 的 `TARGETS`。
+7. 新增核心路径函数时，把它加进 `tools/cmp_disasm.py` 的 `TARGETS`。
 
 ```sh
 make -C src ghostlock            # 真机二进制
@@ -156,7 +156,7 @@ python3 tools/cmp_disasm.py <baseline> build/native/ghostlock
 - [ ] `cve_2026_43499_backend.cpp` 显式实例化
 - [ ] Route 类 + 入口 + Android hook 定义
 - [ ] `Makefile` / `CMakeLists.txt` / `routeFieldPaths` / route 扩展节
-- [ ] 测试矩阵 + `cmp_disasm`（触攻击路径时）+ 真机门禁
+- [ ] 测试矩阵 + `cmp_disasm`（触核心路径时）+ 真机门禁
 
 新增 backend：
 

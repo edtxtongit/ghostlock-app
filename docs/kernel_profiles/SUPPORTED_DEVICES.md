@@ -11,15 +11,14 @@ The app automatically turns on the home-screen **Run via Shizuku** switch for
 them at every start; you can switch it off for the current session, and while it
 is off the app stops asking for Shizuku until the next start.
 
-Shizuku runs the exploit as the shell user, which has no seccomp filter, so the
-W3 seccomp bypass stage is skipped. To use it:
+Shizuku runs the process as the shell user, which does not restrict syscalls, so the
+W3 stage is skipped. To use it:
 
 1. Start Shizuku (for example over ADB) and keep it running.
 2. Tap the status card at the top of the app and grant access when prompted.
 
 Rows without the marker don't turn the switch on automatically, but **you can
-enable it manually on any device**. Running via Shizuku skips the W3 seccomp
-bypass there as well, so it saves time even where it isn't required.
+enable it manually on any device**. Running via Shizuku skips the W3 stage there as well, so it saves time even where it isn't required.
 
 | Kernel                                                 | Devices                                                          |
 |--------------------------------------------------------|------------------------------------------------------------------|

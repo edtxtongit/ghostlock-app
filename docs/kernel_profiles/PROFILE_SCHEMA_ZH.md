@@ -34,7 +34,7 @@
 assets/kernel_profiles/<release>.conf     内置配置（HOCON）
 assets/kernel_profiles/execution-tuning.conf   execution 通用调优（所有内核）
 assets/kernel_profiles/execution-<route>.conf   各路由的 execution 调优 preset（由 resolver 加载）
-assets/kernel_profiles/credential-6x.conf      6.x 凭据模板共享值
+assets/kernel_profiles/credential-6x.conf      6.x cred 模板共享值
 assets/kernel_profiles/kernelsnitch-6x.conf    6.x KernelSnitch 共享值
 assets/kernel_profiles/<major.minor>-template.conf  参考模板（登记 index，调试页可手动加载；不参与设备匹配与自动回退）
 filesDir/offsets.conf                     解析/导入的偏移（imported，HOCON）
@@ -107,12 +107,12 @@ route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
 |---|:---:|:---:|:---:|
 | `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | 必填 | 必填 | 必填 |
 | `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | 必填 | 必填 | 必填 |
-| `kernel_major` ∈ {5,6}、`cred.copy_size`、`cred.caps_count` 及凭据模板边界 | 必填 | 必填 | 必填 |
+| `kernel_major` ∈ {5,6}、`cred.copy_size`、`cred.caps_count` 及 cred 模板边界 | 必填 | 必填 | 必填 |
 | `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | 必填 | | 必填 |
 | `route.select_stack.waiter_shift` | | 必填（0 合法） | |
 | `route.multicast_waiter.waiter_off`（>0）、`route.multicast_waiter.buffer_size`、`route.multicast_waiter.task_offset`、`route.multicast_waiter.lock_offset`、`offset.empty_zero_page`、`kernelsnitch.mm_struct_sz`、`cred.ref_count`（>0） | | | 必填 |
 
-凭据模板边界（通用）：`cred.usage_offset + 4 ≤ cred.copy_size`；`cred.caps_offset + cred.caps_count × 8 ≤ cred.copy_size`；`cred.ref_count ≤ 4`；每个 `cred.refN_image` 非零、`cred.refN_offset + 8 ≤ cred.copy_size`。`multicast_waiter` 还要求 `cred_copy_size ≥ 0xa0` 且 `route.multicast_waiter.waiter_off + route.multicast_waiter.lock_offset + 8 ≤ route.multicast_waiter.buffer_size`。
+cred 模板边界（通用）：`cred.usage_offset + 4 ≤ cred.copy_size`；`cred.caps_offset + cred.caps_count × 8 ≤ cred.copy_size`；`cred.ref_count ≤ 4`；每个 `cred.refN_image` 非零、`cred.refN_offset + 8 ≤ cred.copy_size`。`multicast_waiter` 还要求 `cred_copy_size ≥ 0xa0` 且 `route.multicast_waiter.waiter_off + route.multicast_waiter.lock_offset + 8 ≤ route.multicast_waiter.buffer_size`。
 
 ## 4. 几何字段分组
 
@@ -164,11 +164,11 @@ cred
 | `task_struct.real_cred` / `task_struct.cred` | real cred / cred 指针 |
 | `task_struct.comm` / `task_struct.tasks` / `task_struct.seccomp` | `comm`、任务链表、`seccomp` |
 
-### 4.2 凭据模板（`cred`）
+### 4.2 cred 模板（`cred`）
 
 | 字段 | 含义 |
 |---|---|
-| `cred.copy_size` | 凭据结构整体拷贝大小 |
+| `cred.copy_size` | cred 结构整体拷贝大小 |
 | `cred.usage_offset` / `cred.usage_value` | 引用计数字段偏移 / 目标值 |
 | `cred.caps_offset` / `cred.caps_count` / `cred.caps_value` | capability 集合偏移 / 数量 / 填充值 |
 | `cred.ref_count` | 需要修复的引用字段数量（≤4） |
@@ -221,16 +221,16 @@ cred
 - `race`：路由竞态等待/稳定/轮询间隔
 - `stages`：W1/W2/W3 尝试次数与稳定时间
 - `routes.tcp_zerocopy` / `routes.select_stack` / `routes.multicast_waiter`：各路由的重试与等待参数，分别位于 `execution-tcp-zerocopy.conf` / `execution-select-stack.conf` / `execution-multicast-waiter.conf`；Kotlin 在合成 native 文档时会为缺失的路由组补默认值，因此 native 始终收到完整 `routes`
-- `handoff`：root 交接与 KernelSU 加载轮询
+- `handoff`：交接与 KernelSU 加载轮询
 
 ## 6. 校验与反馈
 
 校验在 Kotlin（`AndroidProfileConfigController.validateProfileFields`）完成：
 
-1. 按第 3 节矩阵检查公共与所选路由的字段：缺失（`null`）或为 `0` 的必填项、越界组合（凭据/多播边界）都会记录到 `ProfileConfig.invalidPaths`。
+1. 按第 3 节矩阵检查公共与所选路由的字段：缺失（`null`）或为 `0` 的必填项、越界组合（cred/多播边界）都会记录到 `ProfileConfig.invalidPaths`。
 2. 参数覆盖页与高级参数覆盖中，非法项以红色 label 显示（未填写同样标红）；已覆盖且合法项为黄色。
 3. `fallback.to` 必须是 `"none"` 或合法路由名；声明回退时，目标分支的必填字段同样会被校验（如回退 `select_stack` 需要 `fallback.route.select_stack.waiter_shift` 存在，0 合法）。
-4. 主页“执行”按钮在 `invalidPaths` 非空时置灰，点击提示修正红色项；即使绕过，`runExploit` 也会在启动 native 前拦截并写入日志。
+4. 主页“执行”按钮在 `invalidPaths` 非空时置灰，点击提示修正红色项；即使忽略，`runExploit` 也会在启动 native 前拦截并写入日志。
 5. native 不再做几何校验，只解析 v2 二进制并按组件选择与字段执行。
 
 ## 7. 加载层次与存储位置
@@ -272,7 +272,7 @@ cred
 
 1. 每份 profile 都要包含当前路由的全字段与公共几何，且每项都必须出现；镜像或设备无法提供的值写显式 `null`（不要用 `0` 占位，除非 0 就是真实值）。非当前路由（及其声明的 fallback）的字段省略。`ghostlock-extract --format conf` 会输出这份完整骨架；`null` 使字段在 app 中可见可编辑，而不是悄无声息地缺失。
 2. `route` 只能有一个分支，且分支内必须给出该路由的必填字段；`fallback.to` 声明了回退目标时，`fallback.route` 分支内同样要补齐。
-   共享 core 值通过 `include` 引入，不要复制：`credential-6x.conf`（6.x 凭据模板）、`kernelsnitch-6x.conf`（6.x collisions）。execution 调优（`execution-tuning.conf` / `execution-<route>.conf`）由 resolver 作为 preset 加载，设备 profile 不要 include。
+   共享 core 值通过 `include` 引入，不要复制：`credential-6x.conf`（6.x cred 模板）、`kernelsnitch-6x.conf`（6.x collisions）。execution 调优（`execution-tuning.conf` / `execution-<route>.conf`）由 resolver 作为 preset 加载，设备 profile 不要 include。
 3. 修改 `execution` 需要设备实测依据；否则保持 defaults。
 4. 本地验证：`make native-host-tests`（profiles 解码/校验向量）与 `./gradlew :app:assembleDebug`。
 5. 修改字段命名/分组时同步更新：`FieldLabels.kt` + `values*/strings.xml`、可能的 `docs/kernel_profiles/defaults*.md`。
@@ -292,7 +292,7 @@ cred
   | 顶层 `compact_waiter` / `mm_struct_sz` | `route.tcp_zerocopy.compact_waiter` / `kernelsnitch.mm_struct_sz` |
   | `kimage_text_base` / `btf_size` / `kallsyms` | 丢弃 |
   | 无 `route` 字段 | 按 6.x 几何推断：`compact_waiter` → tcp，否则 select |
-  | 无 cred 模板 | 写入内置 6.x 常量（`credential-6x.conf` / `kernelsnitch-6x.conf`）；5.x 凭据字段仍由作者提供 |
+  | 无 cred 模板 | 写入内置 6.x 常量（`credential-6x.conf` / `kernelsnitch-6x.conf`）；5.x cred 字段仍由作者提供 |
 
 - 旧版扁平键（`kernelsnitch_collisions` / `mm_struct_sz` / `task_*` / `cred_*` / `off_*` / `mcast_*`）在导入旧 `offsets.json`、解析 extractor 输出或读取高级覆盖时自动归入对应命名空间。
 - 旧配置缺少 `route` 时同样按此推断：`kernel_major==5 且 mcast.waiter_off>0` → `multicast_waiter`；否则 `compact_waiter!=0` → `tcp_zerocopy`；否则 `select_stack`。v1 文档不可能选中 5.x 分支（`multicast_waiter` 仅作为受保护推断保留）。
