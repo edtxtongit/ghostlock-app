@@ -429,8 +429,8 @@ data class NativeProfileDocument(
                     handoffModulePollIntervalMs = vu("execution.handoff.module_poll_interval_ms"),
                     handoffEnforcePollAttempts = vu("execution.handoff.enforce_poll_attempts"),
                     handoffEnforcePollIntervalMs = vu("execution.handoff.enforce_poll_interval_ms"),
-                    consumerMaxCalls = vu("execution.routes.select_stack.consumer_max_calls"),
-                    consumerBurstCalls = vu("execution.routes.select_stack.consumer_burst_calls"),
+                    consumerMaxCalls = routeTuning("consumer_max_calls", route, value),
+                    consumerBurstCalls = routeTuning("consumer_burst_calls", route, value),
                 ),
                 safeMode = 0u,
                 routeConfig = routeConfig,
@@ -624,10 +624,22 @@ data class NativeProfileDocument(
 
 private data class Section(val name: String, val entries: List<Pair<String, ULong>>)
 
+/**
+ * Route-scoped execution value. The active route's `execution.routes.<route>`
+ * group wins; the select group stays the shared fallback it has always been for
+ * the routes whose preset carries no consumer budget of its own.
+ */
+private fun routeTuning(key: String, route: String?, value: (String) -> Long?): UInt =
+    (
+        route?.let { value("execution.routes.$it.$key") }
+            ?: value("execution.routes.select_stack.$key")
+        )?.toUInt() ?: 0u
+
 private fun routeSectionName(route: UInt): String = when (RouteKind.fromWire(route)) {
     RouteKind.TCP_ZEROCOPY -> "route.tcp_zerocopy"
     RouteKind.SELECT_STACK -> "route.select_stack"
     RouteKind.MULTICAST_WAITER -> "route.multicast_waiter"
+    RouteKind.SENDMSG_IOVEC -> "route.sendmsg_iovec"
     null -> ""
 }
 

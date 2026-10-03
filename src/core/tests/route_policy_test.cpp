@@ -17,9 +17,11 @@ namespace {
         route::RouteStatus select_status = {.code = route::ROUTE_OK};
         route::RouteStatus tcp_status = {.code = route::ROUTE_OK};
         route::RouteStatus multicast_status = {.code = route::ROUTE_OK};
+        route::RouteStatus sendmsg_status = {.code = route::ROUTE_OK};
         int32_t select_calls = 0;
         int32_t tcp_calls = 0;
         int32_t multicast_calls = 0;
+        int32_t sendmsg_calls = 0;
     };
 
     StubState state;
@@ -55,6 +57,12 @@ namespace ghostlock::route {
         state.multicast_calls++;
         return state.multicast_status;
     }
+
+    RouteStatus do_sendmsg_iovec_fake_lock_route(const memory::WriteRequest *request) {
+        assert(request);
+        state.sendmsg_calls++;
+        return state.sendmsg_status;
+    }
 } // namespace ghostlock::route
 
 int32_t main(void) {
@@ -65,6 +73,7 @@ int32_t main(void) {
     static_assert(SelectPolicy::kind == RouteKind::SelectStack);
     static_assert(TcpPolicy::kind == RouteKind::TcpZerocopy);
     static_assert(MulticastPolicy::kind == RouteKind::MulticastWaiter);
+    static_assert(SendmsgIovecPolicy::kind == RouteKind::SendmsgIovec);
 
     static_assert(!SelectPolicy::multicast && !SelectPolicy::w2_fast_repair &&
                   !SelectPolicy::w3_exact_target && !SelectPolicy::tcp_payload_layout &&
@@ -76,25 +85,35 @@ int32_t main(void) {
                   !MulticastPolicy::w3_exact_target && !MulticastPolicy::tcp_payload_layout &&
                   !MulticastPolicy::allows_fallback);
 
+    static_assert(!SendmsgIovecPolicy::multicast && !SendmsgIovecPolicy::w2_fast_repair &&
+                  !SendmsgIovecPolicy::w3_exact_target &&
+                  !SendmsgIovecPolicy::tcp_payload_layout &&
+                  !SendmsgIovecPolicy::allows_fallback);
+
     /* Every policy satisfies the registry concept. */
     static_assert(RoutePolicy<SelectPolicy> && RoutePolicy<TcpPolicy> &&
-                  RoutePolicy<MulticastPolicy>);
+                  RoutePolicy<MulticastPolicy> && RoutePolicy<SendmsgIovecPolicy>);
 
     const profile::TargetProfile select_profile = profile_with(profile::kRouteSelectStack, 0);
     const profile::TargetProfile tcp_profile = profile_with(profile::kRouteTcpZerocopy, 0);
     const profile::TargetProfile mcast_profile = profile_with(profile::kRouteMulticastWaiter, 0);
+    const profile::TargetProfile sendmsg_profile = profile_with(profile::kRouteSendmsgIovec, 0);
     const profile::TargetProfile auto_profile = profile_with(profile::kRouteAuto, 0);
 
     assert(SelectPolicy::supported(select_profile) && !SelectPolicy::supported(tcp_profile));
     assert(TcpPolicy::supported(tcp_profile) && !TcpPolicy::supported(mcast_profile));
     assert(MulticastPolicy::supported(mcast_profile) && !MulticastPolicy::supported(select_profile));
+    assert(SendmsgIovecPolicy::supported(sendmsg_profile) &&
+           !SendmsgIovecPolicy::supported(mcast_profile));
     assert(!SelectPolicy::supported(auto_profile) && !TcpPolicy::supported(auto_profile) &&
-           !MulticastPolicy::supported(auto_profile));
+           !MulticastPolicy::supported(auto_profile) &&
+           !SendmsgIovecPolicy::supported(auto_profile));
 
     /* make_route_policy resolves the supported policy (first match wins). */
     assert(std::holds_alternative<SelectPolicy>(make_route_policy(select_profile)));
     assert(std::holds_alternative<TcpPolicy>(make_route_policy(tcp_profile)));
     assert(std::holds_alternative<MulticastPolicy>(make_route_policy(mcast_profile)));
+    assert(std::holds_alternative<SendmsgIovecPolicy>(make_route_policy(sendmsg_profile)));
 
     /* Capability projection follows the resolved policy. */
     assert(!route_needs_ghost_disarm(select_profile) && !route_needs_ghost_disarm(tcp_profile) &&
@@ -127,6 +146,11 @@ int32_t main(void) {
     result = run_route(mcast_profile, &request, 1);
     assert(result.status.code == ROUTE_OK);
     assert(state.multicast_calls == 1 && state.select_calls == 0);
+
+    reset();
+    result = run_route(sendmsg_profile, &request, 1);
+    assert(result.status.code == ROUTE_OK && !result.fallback_used);
+    assert(state.sendmsg_calls == 1 && state.select_calls == 0 && state.tcp_calls == 0);
 
     /* Unsupported routes never dispatch. */
     reset();
@@ -182,6 +206,16 @@ int32_t main(void) {
     assert(by_kind.code == ROUTE_OK && state.multicast_calls == 1);
     by_kind = run_policy_by_kind(RouteKind::Auto, &request);
     assert(by_kind.code == ROUTE_UNSUPPORTED);
+
+    /* The sendmsg route declares no fallback: a clean failure stays put even
+     * when the profile names another route. */
+    reset();
+    state.sendmsg_status = {.code = ROUTE_FALLBACK_SAFE, .userspace_clean = 1,
+                            .kernel_disarmed = 1};
+    result = run_route(profile_with(profile::kRouteSendmsgIovec, profile::kRouteSelectStack),
+                       &request, 1);
+    assert(result.status.code == ROUTE_FALLBACK_SAFE && !result.fallback_used);
+    assert(state.sendmsg_calls == 1 && state.select_calls == 0);
 
     puts("route_policy_test: ok");
     return 0;

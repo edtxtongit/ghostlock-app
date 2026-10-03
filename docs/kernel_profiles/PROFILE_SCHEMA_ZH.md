@@ -87,6 +87,7 @@ offset { init_task = 34464384, init_cred = 34538824 }
 route { tcp_zerocopy { compact_waiter = 1 } }
 route { select_stack { waiter_shift = -2 } }
 route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
+route { sendmsg_iovec { } }
 ```
 
 - 每个路由只要求自己的分支：未采用的路由分支完全不写；分支之间不得并存（一个配置一种 path）。
@@ -100,11 +101,14 @@ route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
   ```
   当前实现支持 `tcp_zerocopy` 失败后回退 `select_stack`；写 `"to": "none"` 即关闭。
 - native 侧 `RouteKind` 枚举与 Kotlin 侧取值一一对应（`profile.h` / `ProfileConfig.Routes`）。
+- `sendmsg_iovec` **没有自己的几何字段**：用户 iovec 槽位落在 waiter 的哪个字段，是镜像的固定属性
+  （`__sys_sendmsg` 的栈上 iovec 数组与残留 `rt_mutex_waiter` 重叠）。因此它的分支是空的，执行参数来自
+  `execution-sendmsg-iovec.conf`。详见 `docs/analysis/sendmsg-iovec-route.md`。
 
 ### 必填矩阵
 
-| 字段组 | tcp_zerocopy | select_stack | multicast_waiter |
-|---|:---:|:---:|:---:|
+| 字段组 | tcp_zerocopy | select_stack | multicast_waiter | sendmsg_iovec |
+|---|:---:|:---:|:---:|:---:|
 | `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | 必填 | 必填 | 必填 |
 | `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | 必填 | 必填 | 必填 |
 | `kernel_major` ∈ {5,6}、`cred.copy_size`、`cred.caps_count` 及 cred 模板边界 | 必填 | 必填 | 必填 |

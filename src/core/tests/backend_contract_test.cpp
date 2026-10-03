@@ -26,9 +26,13 @@ int32_t main(void) {
     static_assert(BackendExecution<session::backend::Cve2026_43499Policy, route::SelectPolicy>);
     static_assert(BackendExecution<session::backend::Cve2026_43499Policy, route::TcpPolicy>);
     static_assert(BackendExecution<session::backend::Cve2026_43499Policy, route::MulticastPolicy>);
+    static_assert(BackendExecution<session::backend::Cve2026_43499Policy,
+                                   route::SendmsgIovecPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::SelectPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::TcpPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::MulticastPolicy>);
+    static_assert(!BackendExecution<session::backend::Cve2026_64560Policy,
+                                    route::SendmsgIovecPolicy>);
 
     /* Identity and execution policy name the same backend. */
     static_assert(session::backend::Cve2026_43499Policy::kind ==
@@ -47,14 +51,19 @@ int32_t main(void) {
     using MulticastPipeline = runtime::Pipeline<session::frontend::RootChildPolicy,
                                                 session::backend::Cve2026_43499Policy,
                                                 route::MulticastPolicy>;
+    using SendmsgPipeline = runtime::Pipeline<session::frontend::RootChildPolicy,
+                                              session::backend::Cve2026_43499Policy,
+                                              route::SendmsgIovecPolicy>;
     static_assert(SelectPipeline::catalogued && TcpPipeline::catalogued &&
-                  MulticastPipeline::catalogued);
+                  MulticastPipeline::catalogued && SendmsgPipeline::catalogued);
     static_assert(SelectPipeline::target ==
                   runtime::DispatchTarget::RootChild_Cve43499_SelectStack);
     static_assert(TcpPipeline::target ==
                   runtime::DispatchTarget::RootChild_Cve43499_TcpZerocopy);
     static_assert(MulticastPipeline::target ==
                   runtime::DispatchTarget::RootChild_Cve43499_MulticastWaiter);
+    static_assert(SendmsgPipeline::target ==
+                  runtime::DispatchTarget::RootChild_Cve43499_SendmsgIovec);
 
     /* The frontend contract is symmetric with the backend one: identity plus
      * the terminal step for an available frontend. */

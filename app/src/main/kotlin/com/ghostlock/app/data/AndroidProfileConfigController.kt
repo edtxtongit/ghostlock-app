@@ -875,6 +875,9 @@ internal class AndroidProfileConfigController(
         private val RouteBranchFields = mapOf(
             "tcp_zerocopy" to listOf("compact_waiter"),
             "select_stack" to listOf("waiter_shift"),
+            /* The sendmsg iovec route has no geometry of its own: the waiter
+             * placement is a fixed property of the image. */
+            "sendmsg_iovec" to emptyList(),
             "multicast_waiter" to listOf(
                 "waiter_off", "buffer_size", "task_offset", "lock_offset",
                 "compact_waiter",

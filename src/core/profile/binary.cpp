@@ -181,6 +181,15 @@ namespace ghostlock::binary_profile {
             PLAIN("timeout_us", execution.select_timeout_us),
         };
 
+        /* The sendmsg iovec route reuses the select route's two execution
+         * knobs: the consumer delay seeds the stamp window and the timeout
+         * bounds it. It has no geometry of its own - the waiter placement is a
+         * fixed property of the image (docs/analysis/sendmsg-iovec-route.md). */
+        constexpr Field kRouteSendmsg[] = {
+            PLAIN("enter_delay_us", execution.select_enter_delay_us),
+            PLAIN("timeout_us", execution.select_timeout_us),
+        };
+
         constexpr Field kRouteMulticast[] = {
             OPT("waiter_off", geometry.mcast_waiter_off),
             OPT("buffer_size", geometry.mcast_buffer_size),
@@ -209,6 +218,7 @@ namespace ghostlock::binary_profile {
             {"route.tcp_zerocopy", kRouteTcp, std::size(kRouteTcp)},
             {"route.select_stack", kRouteSelect, std::size(kRouteSelect)},
             {"route.multicast_waiter", kRouteMulticast, std::size(kRouteMulticast)},
+            {"route.sendmsg_iovec", kRouteSendmsg, std::size(kRouteSendmsg)},
         };
 #undef PLAIN
 #undef OPT
@@ -223,6 +233,8 @@ namespace ghostlock::binary_profile {
                     return "route.select_stack";
                 case profile::kRouteMulticastWaiter:
                     return "route.multicast_waiter";
+                case profile::kRouteSendmsgIovec:
+                    return "route.sendmsg_iovec";
                 default:
                     return {};
             }
@@ -277,7 +289,8 @@ namespace ghostlock::binary_profile {
              * is rejected instead of being inferred. */
             if (out->route != profile::kRouteTcpZerocopy &&
                 out->route != profile::kRouteSelectStack &&
-                out->route != profile::kRouteMulticastWaiter) {
+                out->route != profile::kRouteMulticastWaiter &&
+                out->route != profile::kRouteSendmsgIovec) {
                 return -1;
             }
 

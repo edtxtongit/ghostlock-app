@@ -16,6 +16,9 @@ enum class RouteKind(
     MULTICAST_WAITER(3u, "multicast_waiter", MulticastConfig.EMPTY, { value ->
         MulticastConfig.from(value)
     }),
+    SENDMSG_IOVEC(4u, "sendmsg_iovec", SendmsgIovecConfig.EMPTY, { value ->
+        SendmsgIovecConfig.from(value)
+    }),
     ;
 
     fun emptyConfig(): RouteConfig = empty

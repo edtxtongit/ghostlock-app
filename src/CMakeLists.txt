@@ -61,6 +61,7 @@ set(SOURCES
         core/race/threads.cpp
         core/route/tcp_zerocopy_route.cpp
         core/route/select_stack_route.cpp
+        core/route/sendmsg_iovec_route.cpp
         core/route/multicast_waiter_route.cpp
         core/memory/payload_builder.cpp
         core/session/runtime_config.cpp

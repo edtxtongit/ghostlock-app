@@ -43,7 +43,8 @@ namespace ghostlock::runtime {
     [[nodiscard]] constexpr bool middleware_available(MiddlewareKind kind) noexcept {
         return kind == MiddlewareKind::TcpZerocopy ||
                kind == MiddlewareKind::SelectStack ||
-               kind == MiddlewareKind::MulticastWaiter;
+               kind == MiddlewareKind::MulticastWaiter ||
+               kind == MiddlewareKind::SendmsgIovec;
     }
 
     /* Per-id availability pre-check: the three ids are each selectable. This
@@ -80,6 +81,7 @@ namespace ghostlock::runtime {
         RootChild_Cve43499_SelectStack,
         RootChild_Cve43499_TcpZerocopy,
         RootChild_Cve43499_MulticastWaiter,
+        RootChild_Cve43499_SendmsgIovec,
     };
 
     [[nodiscard]] constexpr DispatchTarget dispatch_target_of(
@@ -96,6 +98,8 @@ namespace ghostlock::runtime {
                 return DispatchTarget::RootChild_Cve43499_TcpZerocopy;
             case MiddlewareKind::MulticastWaiter:
                 return DispatchTarget::RootChild_Cve43499_MulticastWaiter;
+            case MiddlewareKind::SendmsgIovec:
+                return DispatchTarget::RootChild_Cve43499_SendmsgIovec;
             default:
                 return DispatchTarget::None;
         }
@@ -121,6 +125,7 @@ namespace ghostlock::runtime {
             case MiddlewareKind::TcpZerocopy: return "tcp_zerocopy";
             case MiddlewareKind::SelectStack: return "select_stack";
             case MiddlewareKind::MulticastWaiter: return "multicast_waiter";
+            case MiddlewareKind::SendmsgIovec: return "sendmsg_iovec";
             default: return "auto";
         }
     }
