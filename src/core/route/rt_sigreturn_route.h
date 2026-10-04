@@ -26,6 +26,12 @@
  *   v19.d[1] -> waiter+0x68 (ww_ctx)
  *   v13..v17 -> waiter+0x00..0x50 (tree/pi_tree) - defined, not left live
  *
+ * NOT VIABLE on 6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k: the image
+ * clears task->pi_blocked_on ([x,#0x938]) at 0x108b008 and 0x108b818, and the
+ * chain walk bails on a zero pointer (0x108bf78 cbz). The wait returns before
+ * this route runs, so the stale waiter is unreachable and the stamped stack
+ * bytes never start a PI walk. See docs/analysis/rt-sigreturn-route.md 5.1.
+ *
  * tree/pi_tree are written as a zero rb node. Under Linux rbtree semantics a
  * zero node is NOT RB_EMPTY_NODE (that needs parent_color == the node address),
  * so the walk treats it as a real (parent/left/right 0, black) node and the

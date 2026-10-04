@@ -4,6 +4,12 @@
 **Scope:** static, image-only. No device run, no pstore. Device behaviour is **not**
 verified; this route is not listed as a supported device yet.
 
+> **Status: NOT VIABLE — do not enable on device.** The route's trigger premise
+> is refuted by the target image: `pi_blocked_on` (offset `0x938`) is cleared on
+> every normal return path of `FUTEX_WAIT_REQUEUE_PI`, and that syscall returns
+> before this route runs. See §5.1. The stack-overlap geometry is real but cannot
+> restore the cleared task pointer, so the route cannot drive the PI chain walk.
+
 ## 1. Why the earlier routes do not fit this image
 
 - `select_stack`: the stale `rt_mutex_waiter` sits 10 qwords above the pselect
@@ -110,11 +116,32 @@ depends on the later PI re-sort.
 
 ## 5. Caveats (unproven)
 
-- Waiter reachability is **not** proven: the route assumes `current->pi_blocked_on`
-  still points at the stale waiter when the consumer fires. The image has a
-  store-zero near `pi_blocked_on` (payload `0x108b790`, `[x20,#0x938]`) but its
-  function boundary and execution order are unresolved, so the route may cover an
-  unreachable old stack frame and the PI walk may never fire.
+### 5.1 `pi_blocked_on` — the route's premise is refuted (verified on the image)
+
+The route only works if `current->pi_blocked_on` (`[x, #0x938]`) still points at
+the stale waiter when the consumer fires. The target image clears that field
+before the route can run:
+
+| site | image evidence | effect |
+|---|---|---|
+| `0x108b008` (`rt_mutex_wait_proxy_lock` acquire path) | `str xzr, [x20, #0x938]` | clears before the acquire completes |
+| `0x108b818` (inside `remove_waiter` @ `0x108b790`, reached by cleanup when the waiter is not the owner) | `str xzr, [x20, #0x938]` | clears |
+| `0x108bf78` / `0x108bf7c` (`rt_mutex_adjust_prio_chain`) | `ldr x25, [x19, #0x938]` ; `cbz x25, ...` | a zero pointer exits the walk |
+
+`0x938 = 2360` is exactly the profile's `task_struct.pi_blocked_on` offset, so the
+disassembly field matches the profile. `waiter_thread()` calls the route only
+**after** `FUTEX_WAIT_REQUEUE_PI` returns. In the expected timing the owner holds
+`target_futex` until the route is done, so the waiter cannot acquire the lock and
+must return through the timeout/error path → `rt_mutex_cleanup_proxy_lock` →
+`remove_waiter` → the clear at `0x108b818`. By the time the route stamps and arms
+the consumer, `pi_blocked_on` is already zero, and `sched_setattr(waiter_tid)`
+cannot walk the stale stack waiter. This is an static image + source-order
+conclusion, **not** a device run.
+
+- Consequence: the FPSIMD stack-overlap geometry (§3, §4) can be correct without
+  the route doing anything, because the task-field link that starts the walk is
+  gone. This branch must not be enabled or marked supported until a trigger that
+  keeps `pi_blocked_on` live is found and proven.
 - Stamp/consumer handshake: the route now stamps **exactly once** and only then
   arms the consumer, so no second `rt_sigreturn` `memset`+copy can race the
   consumer's check-then-use of `waiter->lock`. The max-call failure branch also
@@ -135,6 +162,6 @@ depends on the later PI re-sort.
 ## 6. Profile
 
 `app/src/main/assets/kernel_profiles/6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k.conf`
-uses `route { rt_sigreturn { } }` with `fallback { to = "none" }`; execution
-tuning is `execution-rt-sigreturn.conf`. The route branch is empty — the geometry
-is a fixed property of the image.
+currently selects `route { rt_sigreturn { } }` with `fallback { to = "none" }`;
+execution tuning is `execution-rt-sigreturn.conf`. Per §5.1 this selection is
+**not viable** and must not be treated as a working device profile.
