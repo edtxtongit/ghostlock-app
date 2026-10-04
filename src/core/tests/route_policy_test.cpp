@@ -103,6 +103,9 @@ int32_t main(void) {
                   !RtSigreturnPolicy::w3_exact_target &&
                   !RtSigreturnPolicy::tcp_payload_layout &&
                   !RtSigreturnPolicy::allows_fallback);
+    static_assert(RtSigreturnPolicy::ghost_disarm && MulticastPolicy::ghost_disarm &&
+                  !SelectPolicy::ghost_disarm && !TcpPolicy::ghost_disarm &&
+                  !SendmsgIovecPolicy::ghost_disarm);
 
     /* Every policy satisfies the registry concept. */
     static_assert(RoutePolicy<SelectPolicy> && RoutePolicy<TcpPolicy> &&
@@ -139,7 +142,9 @@ int32_t main(void) {
 
     /* Capability projection follows the resolved policy. */
     assert(!route_needs_ghost_disarm(select_profile) && !route_needs_ghost_disarm(tcp_profile) &&
-           route_needs_ghost_disarm(mcast_profile));
+           route_needs_ghost_disarm(mcast_profile) &&
+           !route_needs_ghost_disarm(sendmsg_profile) &&
+           route_needs_ghost_disarm(rt_sigreturn_profile));
     assert(!route_capability(select_profile,
                              [](auto policy) {
                                  return std::decay_t<decltype(policy)>::tcp_payload_layout;

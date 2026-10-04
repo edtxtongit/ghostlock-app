@@ -55,6 +55,11 @@ namespace ghostlock::route {
      * ever enters the PI-window path. */
     struct RoutePolicyDefaults {
         static constexpr bool multicast = false;
+        /* Post-race ghost disarm: a route whose rolled-back proxy waiter leaves
+         * this thread's pi_blocked_on pointing at the reclaimed stack waiter
+         * must not let the thread exit with that reference still live, or the
+         * next PI chain walk follows it into freed/reclaimed stack. */
+        static constexpr bool ghost_disarm = false;
         static constexpr bool w2_fast_repair = false;
         static constexpr bool w3_exact_target = false;
         static constexpr bool tcp_payload_layout = false;
@@ -108,6 +113,7 @@ namespace ghostlock::route {
     struct MulticastPolicy : RoutePolicyDefaults {
         static constexpr RouteKind kind = RouteKind::MulticastWaiter;
         static constexpr bool multicast = true;
+        static constexpr bool ghost_disarm = true;
         static constexpr bool w2_fast_repair = true;
 
         static bool supported(const profile::TargetProfile &profile) noexcept {
@@ -159,6 +165,7 @@ namespace ghostlock::route {
     struct RtSigreturnPolicy : RoutePolicyDefaults {
         static constexpr RouteKind kind = RouteKind::RtSigreturn;
         static constexpr bool allows_fallback = false;
+        static constexpr bool ghost_disarm = true;
 
         static bool supported(const profile::TargetProfile &profile) noexcept {
             return profile.supports(kind);
@@ -316,7 +323,7 @@ namespace ghostlock::route {
     [[nodiscard]] inline bool route_needs_ghost_disarm(
         const profile::TargetProfile &profile) noexcept {
         return route_capability(profile, [](auto policy) {
-            return std::decay_t<decltype(policy)>::multicast;
+            return std::decay_t<decltype(policy)>::ghost_disarm;
         });
     }
 } // namespace ghostlock::route
