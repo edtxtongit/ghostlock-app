@@ -4,14 +4,12 @@
 **Scope:** static, image-only. No device run, no pstore. Device behaviour is **not**
 verified; this route is not listed as a supported device yet.
 
-> **Status: NOT VIABLE — do not enable on device.** The route's trigger premise
-> is refuted by the target image: `pi_blocked_on` (offset `0x938`) is cleared on
-> every normal return path of `FUTEX_WAIT_REQUEUE_PI`, and that syscall returns
-> before this route runs. See §5.1. This is **stock 6.6.58 behaviour, not a
-> vendor patch** (same clears are in the public `android15-6.6-2025-01_r1`
-> tree), so no route in this family (select_stack / sendmsg_iovec / rt_sigreturn)
-> can restore it. The stack-overlap geometry is real but useless without the
-> trigger.
+> **Status: trigger premise = the CVE itself (static).** An earlier revision of
+> this file wrongly marked the route NOT VIABLE: it read `remove_waiter()`'s
+> `str xzr, [current, #0x938]` as clearing the *waiter's* `pi_blocked_on`, but on
+> the CVE-2026-43499 path that store clears the *requeuer's* field
+> (`current != waiter->task`), leaving the waiter's pointer dangling. See §5.1.
+> Not device-verified.
 
 ## 1. Why the earlier routes do not fit this image
 
@@ -119,48 +117,71 @@ depends on the later PI re-sort.
 
 ## 5. Caveats (unproven)
 
-### 5.1 `pi_blocked_on` — the route's premise is refuted (verified on the image)
+### 5.1 `pi_blocked_on` — the dangling pointer *is* the CVE (corrected)
 
-The route only works if `current->pi_blocked_on` (`[x, #0x938]`) still points at
-the stale waiter when the consumer fires. The target image clears that field
-before the route can run:
+CVE-2026-43499 (GhostLock) is introduced in `v2.6.39-rc1` (commit `8161239a8bcc`,
+"rtmutex: Simplify PI algorithm and make highest prio task get lock") and fixed
+in `v7.1` by `3bfdc63936dd` ("rtmutex: Use waiter::task instead of current in
+remove_waiter()", 2026-04-21, Cc: stable). Requirement is `CONFIG_FUTEX_PI=y`; no
+privileges or user namespaces needed. The 6.6.y line carries the fix as of
+6.6.140 (commit 8a1fc8d698ac), so this image (6.6.58) is inside the affected range.
 
-| site | image evidence | effect |
+The upstream record (MITRE CVE-2026-43499, kernel.org CNA) gives the introduced
+commit and the fixed version per maintained branch:
+
+| branch | fixed in | branch fix commit |
 |---|---|---|
-| `0x108b008` (`rt_mutex_wait_proxy_lock` acquire path) | `str xzr, [x20, #0x938]` | clears before the acquire completes |
-| `0x108b818` (inside `remove_waiter` @ `0x108b790`, reached by cleanup when the waiter is not the owner) | `str xzr, [x20, #0x938]` | clears |
-| `0x108bf78` / `0x108bf7c` (`rt_mutex_adjust_prio_chain`) | `ldr x25, [x19, #0x938]` ; `cbz x25, ...` | a zero pointer exits the walk |
+| 5.10.y | 5.10.261 | `f3fa3424bceb` |
+| 5.15.y | 5.15.212 | `838ce5cb5d93` |
+| 6.1.y | 6.1.175 | `d8cce4773c2b` |
+| 6.6.y | **6.6.140** | `8a1fc8d698ac` |
+| 6.12.y | 6.12.86 | `6d52dfcb2a5d` |
+| 6.18.y | 6.18.27 | `3fb7394a8377` |
+| 7.0.y | 7.0.4 | `88614876370a` |
+| mainline | 7.1 | `3bfdc63936dd` |
 
-`0x938 = 2360` is exactly the profile's `task_struct.pi_blocked_on` offset, so the
-disassembly field matches the profile. `waiter_thread()` calls the route only
-**after** `FUTEX_WAIT_REQUEUE_PI` returns. In the expected timing the owner holds
-`target_futex` until the route is done, so the waiter cannot acquire the lock and
-must return through the timeout/error path → `rt_mutex_cleanup_proxy_lock` →
-`remove_waiter` → the clear at `0x108b818`. By the time the route stamps and arms
-the consumer, `pi_blocked_on` is already zero, and `sched_setattr(waiter_tid)`
-cannot walk the stale stack waiter. This is a static image + source-order
-conclusion, **not** a device run.
+Introduced in `v2.6.39-rc1` (`8161239a8bcc`, May 2011); the vulnerable range is
+`2.6.39` up to the per-branch fix above. Each branch commit back-references the
+mainline `3bfdc63936dd`. EOL branches with no backport (4.19, 5.4, ...) stay
+affected. This image is 6.6.58 < 6.6.140, i.e. inside the range.
 
-This clearing is **not** a vendor hardening. The stock public
-`android15-6.6-2025-01_r1` tree already clears the field in
-`kernel/locking/rtmutex.c`:
+`remove_waiter()` clears `current->pi_blocked_on`. That is correct on the normal
+slow path, where `current == waiter->task`, but wrong on the **proxy-lock
+rollback** path (`futex_requeue` → `rt_mutex_start_proxy_lock` → `-EDEADLK` →
+`remove_waiter`), where `current` is the *requeuer*. There the store clears the
+requeuer's field and the **waiter task's `pi_blocked_on` is left pointing at its
+own stack waiter**. The waiter then returns to userspace with that dangling
+pointer; the popped kernel stack frame is later reused by the route, and a later
+PI chain walk through that task follows it. That is precisely this route's
+trigger.
 
-- `try_to_take_rt_mutex()` → `task->pi_blocked_on = NULL;` (line 1161)
-- `remove_waiter()` → `current->pi_blocked_on = NULL;` (line 1535)
-- `task_blocks_on_rt_mutex()` deadlock path → `task->pi_blocked_on = NULL;` (line 1241)
+Image evidence matches the vulnerable (unpatched) form:
 
-(verified against the public tag source). So the refutation is **not specific to
-this image**: any stock 6.6.58 kernel clears `pi_blocked_on` on these return
-paths. The image's version string (`...gab1c189b09cf...`) does not resolve to a
-public commit, so the exact tree is unconfirmed, but this part matches public
-6.6.58. The extractor's `remove_waiter` gate only checks for `mrs sp_el0` (still
-using `current`), which this image satisfies, so it reports "unpatched" while the
-exploit's dangling-pointer prerequisite is nonetheless absent.
+| site | image evidence |
+|---|---|
+| `remove_waiter` @ `0x108b790` | `0x108b7c8 mrs x20, sp_el0` (uses `current`), then `0x108b818 str xzr,[x20,#0x938]` (`current->pi_blocked_on = NULL`) |
+| `rt_mutex_adjust_prio_chain` @ `0x108bf78` | `ldr x25,[x19,#0x938]` / `0x108bf7c cbz x25,…` — the walk entry this route feeds |
 
-- Consequence: the FPSIMD stack-overlap geometry (§3, §4) can be correct without
-  the route doing anything, because the task-field link that starts the walk is
-  gone. This branch must not be enabled or marked supported until a trigger that
-  keeps `pi_blocked_on` live is found and proven.
+`0x938 = 2360` is the profile's `task_struct.pi_blocked_on`. The fix would store
+to `waiter->task->pi_blocked_on`; this image still stores to `current`, so the
+extractor's gate (`remove_waiter` still contains `mrs sp_el0`) correctly reports
+it **unpatched**. (The pre-fix source is why the earlier reading looked like a
+clear: it *is* a clear, but of the wrong task.)
+
+The app's `PiRace` builds exactly the three-thread cycle needed to reach the
+`-EDEADLK` rollback: the waiter holds `chain_futex` and parks in
+`FUTEX_WAIT_REQUEUE_PI(wait_futex → target_futex)`; the owner holds
+`target_futex` and blocks on `chain_futex`; the main thread issues
+`FUTEX_CMP_REQUEUE_PI(wait_futex → target_futex)`. The requeue's chain walk sees
+the cycle, `__rt_mutex_start_proxy_lock` returns `-EDEADLK`, and the rollback
+calls `remove_waiter` with `current` = main thread. The owner keeping
+`target_futex` until the route finishes is what *creates* the deadlock; it is not
+a reason the waiter's field is cleared.
+
+(Static image + upstream CVE/source analysis; not a device run. The image's
+version string does not resolve to a public commit, but its `remove_waiter` code
+matches the unpatched 6.6.58 source.)
+
 - Stamp/consumer handshake: the route now stamps **exactly once** and only then
   arms the consumer, so no second `rt_sigreturn` `memset`+copy can race the
   consumer's check-then-use of `waiter->lock`. The max-call failure branch also
@@ -182,5 +203,6 @@ exploit's dangling-pointer prerequisite is nonetheless absent.
 
 `app/src/main/assets/kernel_profiles/6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k.conf`
 currently selects `route { rt_sigreturn { } }` with `fallback { to = "none" }`;
-execution tuning is `execution-rt-sigreturn.conf`. Per §5.1 this selection is
-**not viable** and must not be treated as a working device profile.
+execution tuning is `execution-rt-sigreturn.conf`. Per §5.1 the trigger premise
+is the CVE itself and this image is in the unpatched range, so the selection is
+consistent; it is still not device-verified.

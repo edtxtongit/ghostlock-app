@@ -26,11 +26,13 @@
  *   v19.d[1] -> waiter+0x68 (ww_ctx)
  *   v13..v17 -> waiter+0x00..0x50 (tree/pi_tree) - defined, not left live
  *
- * NOT VIABLE on 6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k: the image
- * clears task->pi_blocked_on ([x,#0x938]) at 0x108b008 and 0x108b818, and the
- * chain walk bails on a zero pointer (0x108bf78 cbz). The wait returns before
- * this route runs, so the stale waiter is unreachable and the stamped stack
- * bytes never start a PI walk. See docs/analysis/rt-sigreturn-route.md 5.1.
+ * Trigger (CVE-2026-43499 / GhostLock, v2.6.39-rc1..v7.1): the proxy-lock
+ * rollback in remove_waiter() clears current->pi_blocked_on, but there current is
+ * the requeuer, so the waiter task's pi_blocked_on keeps pointing at its popped
+ * stack waiter. This image (6.6.58) has the unpatched remove_waiter
+ * (0x108b7c8 mrs sp_el0, 0x108b818 str xzr,[x20,#0x938]); the fix
+ * (3bfdc63936dd) stores to waiter->task instead. The consumer's sched_setattr
+ * then walks that dangling pointer. See docs/analysis/rt-sigreturn-route.md 5.1.
  *
  * tree/pi_tree are written as a zero rb node. Under Linux rbtree semantics a
  * zero node is NOT RB_EMPTY_NODE (that needs parent_color == the node address),
