@@ -7,8 +7,11 @@ verified; this route is not listed as a supported device yet.
 > **Status: NOT VIABLE — do not enable on device.** The route's trigger premise
 > is refuted by the target image: `pi_blocked_on` (offset `0x938`) is cleared on
 > every normal return path of `FUTEX_WAIT_REQUEUE_PI`, and that syscall returns
-> before this route runs. See §5.1. The stack-overlap geometry is real but cannot
-> restore the cleared task pointer, so the route cannot drive the PI chain walk.
+> before this route runs. See §5.1. This is **stock 6.6.58 behaviour, not a
+> vendor patch** (same clears are in the public `android15-6.6-2025-01_r1`
+> tree), so no route in this family (select_stack / sendmsg_iovec / rt_sigreturn)
+> can restore it. The stack-overlap geometry is real but useless without the
+> trigger.
 
 ## 1. Why the earlier routes do not fit this image
 
@@ -135,8 +138,24 @@ disassembly field matches the profile. `waiter_thread()` calls the route only
 must return through the timeout/error path → `rt_mutex_cleanup_proxy_lock` →
 `remove_waiter` → the clear at `0x108b818`. By the time the route stamps and arms
 the consumer, `pi_blocked_on` is already zero, and `sched_setattr(waiter_tid)`
-cannot walk the stale stack waiter. This is an static image + source-order
+cannot walk the stale stack waiter. This is a static image + source-order
 conclusion, **not** a device run.
+
+This clearing is **not** a vendor hardening. The stock public
+`android15-6.6-2025-01_r1` tree already clears the field in
+`kernel/locking/rtmutex.c`:
+
+- `try_to_take_rt_mutex()` → `task->pi_blocked_on = NULL;` (line 1161)
+- `remove_waiter()` → `current->pi_blocked_on = NULL;` (line 1535)
+- `task_blocks_on_rt_mutex()` deadlock path → `task->pi_blocked_on = NULL;` (line 1241)
+
+(verified against the public tag source). So the refutation is **not specific to
+this image**: any stock 6.6.58 kernel clears `pi_blocked_on` on these return
+paths. The image's version string (`...gab1c189b09cf...`) does not resolve to a
+public commit, so the exact tree is unconfirmed, but this part matches public
+6.6.58. The extractor's `remove_waiter` gate only checks for `mrs sp_el0` (still
+using `current`), which this image satisfies, so it reports "unpatched" while the
+exploit's dangling-pointer prerequisite is nonetheless absent.
 
 - Consequence: the FPSIMD stack-overlap geometry (§3, §4) can be correct without
   the route doing anything, because the task-field link that starts the walk is
