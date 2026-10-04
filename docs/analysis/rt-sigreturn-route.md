@@ -1,0 +1,114 @@
+# `rt_sigreturn` middleware — static analysis (6.6.58 DNN-AN00)
+
+**Image:** `6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k` (Honor DNN-AN00)
+**Scope:** static, image-only. No device run, no pstore. Device behaviour is **not**
+verified; this route is not listed as a supported device yet.
+
+## 1. Why the earlier routes do not fit this image
+
+- `select_stack`: the stale `rt_mutex_waiter` sits 10 qwords above the pselect
+  fd_set window. The PI walk consumes waiter words 10..12 (task/lock/wake_state);
+  placing them needs `waiter_shift = +8`, which lands them at global words
+  20/21/22 — past the 15-word fd_set window. Staying inside the window
+  misplaces them by 10 qwords. No `waiter_shift` works.
+- `sendmsg_iovec`: the user iovec array reaches the waiter tail, but the image
+  zeroes the overlapping stack area before importing the iovecs, so the route
+  cannot present the whole `task/lock/wake_state` set atomically. **This route is
+  unusable and is not used by the DNN-AN00 profile.**
+
+## 2. Image facts
+
+`__arm64_sys_rt_sigreturn` @ payload `+0x414af4`:
+
+```
+stp x29, x30, [sp, #-0x60]!     ; entry frame 0x60
+sub sp, sp, #0x270              ; local frame 0x270   => D = 0x2d0
+...
+memset(sp + 0x50, 0, 0x210)     ; clear the signal save area
+cmp  wsize, #0x210              ; FPSIMD record size gate
+...
+add  x0, sp, #0x50              ; dest = kernel stack buffer
+mov  w2, #0x200                 ; length = FPSIMD vregs
+bl   __arch_copy_from_user      ; @ +0x415138, source = record + 0x10
+```
+
+The FPSIMD signal record is the first record in `sigcontext.__reserved`:
+
+| field | value |
+|---|---|
+| magic | `0x46508001` |
+| size | `0x210` |
+| `vregs[32]` | offset `0x10`, 16 bytes each |
+
+The copy source is `record + 0x10`, i.e. `vregs[0]`; no validator reads the
+copied bytes before they land on the stack. There is **no `capable()`/LSM gate**
+on this path. The FPSIMD branch requires `system_cpucaps[36] == 0`
+(`has_no_fpsimd` absent), which holds on any CPU with the FPSIMD feature — i.e.
+the normal arm64 case; the value cannot be read from a static image and is a
+documented profile condition.
+
+## 3. Geometry (relative to syscall entry `SP0`)
+
+Futex frames (same as the other routes):
+
+| object | address |
+|---|---|
+| `__arm64_sys_futex` frame | `0x80` |
+| `futex_wait_requeue_pi` frame | `0x1c0` |
+| waiter local (`sp+0x90` in that frame) | `SP0 - 0x1b0` |
+
+`rt_sigreturn` buffer: `D - O = 0x2d0 - 0x50 = 0x280` from `SP0`, length
+`0x200`. The waiter spans `[SP0-0x1b0, SP0-0x140)`, so the buffer **fully
+contains** the waiter and covers the whole head, not just the tail:
+
+| waiter field | waiter off | copy off | vreg |
+|---|---:|---:|---:|
+| tree | `0x00` | `0x0d0` | `v13` |
+| pi_tree | `0x28` | `0x0f8` | `v15` |
+| task | `0x50` | `0x120` | `v18.d[0]` |
+| lock | `0x58` | `0x128` | `v18.d[1]` |
+| wake_state | `0x60` | `0x130` | `v19.d[0]` |
+| ww_ctx | `0x68` | `0x138` | `v19.d[1]` |
+
+`rt_mutex_waiter` is `0x70` bytes (`tree`/`pi_tree` are `rt_waiter_node`,
+`0x28` each). The copy reaches `0x130..0x140` as well, so this route defines
+**all** of `v13..v19`; nothing above the waiter is left live.
+
+## 4. Route mechanics
+
+Per stamp the waiter thread sets `v13..v19` and issues
+`tgkill(getpid(), gettid(), SIGURG)` from a single `asm` block, so no compiler
+code can clobber the vector registers before the syscall. The signal is
+unblocked and a no-op handler installed; the kernel builds the signal frame from
+the current vector state, the handler returns through `rt_sigreturn`, and the
+`__arch_copy_from_user` above writes the vregs onto the kernel stack over the
+stale waiter. The consumer thread then fires `sched_setattr` on the waiter TID,
+walking the PI chain.
+
+The crafted rb nodes that carry the write target/value live in the payload page
+that `waiter->lock` redirects the walk into (`prepare_skb_payload`), so the stack
+waiter only has to carry `task`/`lock`/`wake_state`. Writing the head
+(`tree`/`pi_tree`) here is equivalent to what the working `select_stack` route
+already does.
+
+`wake_state` is set to `3` (`RT_MUTEX_FULL`), matching what the image's own
+`futex_wait_requeue_pi` installs.
+
+## 5. Caveats (unproven)
+
+- Waiter reachability is **not** proven: the route assumes `current->pi_blocked_on`
+  still points at the stale waiter when the consumer fires. Same open question as
+  the other routes.
+- `disarm()` cannot interrupt an in-flight stamp loop; the loop exits only on
+  consumer success, consumer max-calls, or timeout.
+- Not device-verified; no pstore/ramoops. `kernel_phys_offset = null` uses the
+  compiled default and is untested on this unit.
+- The FPSIMD branch condition (`system_cpucaps[36] == 0`) is a runtime CPU feature
+  bit, not statically decidable from the image.
+
+## 6. Profile
+
+`app/src/main/assets/kernel_profiles/6.6.58-android15-8-gab1c189b09cf-abogki417154918-4k.conf`
+uses `route { rt_sigreturn { } }` with `fallback { to = "none" }`; execution
+tuning is `execution-rt-sigreturn.conf`. The route branch is empty — the geometry
+is a fixed property of the image.

@@ -111,6 +111,7 @@ route { tcp_zerocopy { compact_waiter = 1 } }
 route { select_stack { waiter_shift = -2 } }
 route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
 route { sendmsg_iovec { } }
+route { rt_sigreturn { } }
 ```
 
 - Each route needs only its own branch; write no other branch, and never leave
@@ -133,18 +134,22 @@ route { sendmsg_iovec { } }
   iovec array overlapping the stale `rt_mutex_waiter`). Its branch is therefore
   empty and picks up its execution knobs from `execution-sendmsg-iovec.conf`.
   See `docs/analysis/sendmsg-iovec-route.md`.
+- `rt_sigreturn` likewise has no geometry of its own: the kernel-stack overlap
+  is a fixed property of the image (`__arm64_sys_rt_sigreturn`'s FPSIMD save
+  area overlapping the stale `rt_mutex_waiter`). Its branch is empty and it
+  loads `execution-rt-sigreturn.conf`. See `docs/analysis/rt-sigreturn-route.md`.
 
 ### Required-field matrix
 
-| Field group | tcp_zerocopy | select_stack | multicast_waiter | sendmsg_iovec |
-|---|:---:|:---:|:---:|:---:|
-| `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | required | required | required | required |
-| `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | required | required | required | required |
-| `kernel_major` ∈ {5,6}, `cred.copy_size`, `cred.caps_count`, and the cred-template bounds | required | required | required | required |
-| `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | required | | required | |
-| `route.select_stack.waiter_shift` | | required (0 is valid) | | |
-| `route.multicast_waiter.waiter_off` (>0), `route.multicast_waiter.buffer_size`, `route.multicast_waiter.task_offset`, `route.multicast_waiter.lock_offset`, `offset.empty_zero_page`, `kernelsnitch.mm_struct_sz`, `cred.ref_count` (>0) | | | required | |
-| (no route-specific field; the branch is empty) | | | | - |
+| Field group | tcp_zerocopy | select_stack | multicast_waiter | sendmsg_iovec | rt_sigreturn |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | required | required | required | required | required |
+| `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | required | required | required | required | required |
+| `kernel_major` ∈ {5,6}, `cred.copy_size`, `cred.caps_count`, and the cred-template bounds | required | required | required | required | required |
+| `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | required | | required | | |
+| `route.select_stack.waiter_shift` | | required (0 is valid) | | | |
+| `route.multicast_waiter.waiter_off` (>0), `route.multicast_waiter.buffer_size`, `route.multicast_waiter.task_offset`, `route.multicast_waiter.lock_offset`, `offset.empty_zero_page`, `kernelsnitch.mm_struct_sz`, `cred.ref_count` (>0) | | | required | | |
+| (no route-specific field; the branch is empty) | | | | - | - |
 
 Credential-template bounds (general): `cred.usage_offset + 4 ≤ cred.copy_size`;
 `cred.caps_offset + cred.caps_count × 8 ≤ cred.copy_size`; `cred.ref_count ≤ 4`;

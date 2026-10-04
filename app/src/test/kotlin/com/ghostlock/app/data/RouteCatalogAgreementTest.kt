@@ -17,6 +17,7 @@ class RouteCatalogAgreementTest {
             "select_stack" to 2u,
             "multicast_waiter" to 3u,
             "sendmsg_iovec" to 4u,
+            "rt_sigreturn" to 5u,
         )
         assertEquals(expected, RouteKind.values().map { it.token to it.wire })
     }

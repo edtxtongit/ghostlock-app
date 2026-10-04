@@ -270,7 +270,7 @@ int32_t main(void) {
             doc[5] = static_cast<char>(version >> 8);
             assert(parse_doc(doc, &parsed, release, sizeof(release)) == -1);
         }
-        for (int route : {0, 5, 99}) {
+        for (int route : {0, 6, 99}) {
             const std::string doc = build_doc(static_cast<uint8_t>(route), "r", {});
             assert(parse_doc(doc, &parsed, release, sizeof(release)) == -1);
         }

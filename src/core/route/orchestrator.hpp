@@ -51,6 +51,14 @@ namespace ghostlock::runtime {
                               "dispatch case must match the pipeline's target");
                 return P::run(exploit_session, decoded, debug_dir, force_attack);
             }
+            case DispatchTarget::RootChild_Cve43499_RtSigreturn: {
+                using P = Pipeline<session::frontend::RootChildPolicy,
+                                   session::backend::Cve2026_43499Policy,
+                                   route::RtSigreturnPolicy>;
+                static_assert(P::target == DispatchTarget::RootChild_Cve43499_RtSigreturn,
+                              "dispatch case must match the pipeline's target");
+                return P::run(exploit_session, decoded, debug_dir, force_attack);
+            }
             case DispatchTarget::None:
                 return RunResult{.code = RunCode::Rejected};
         }

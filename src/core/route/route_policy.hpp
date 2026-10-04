@@ -25,6 +25,8 @@ namespace ghostlock::route {
 
     RouteStatus do_sendmsg_iovec_fake_lock_route(const memory::WriteRequest *request);
 
+    RouteStatus do_rt_sigreturn_fake_lock_route(const memory::WriteRequest *request);
+
     using RouteKind = ghostlock::profile::RouteKind;
 
     /* Native middleware catalog (Batch 3): each policy is one selectable
@@ -148,6 +150,25 @@ namespace ghostlock::route {
         }
     };
 
+    /* 6.6 images whose stale futex waiter cannot be reached through either the
+     * pselect fd_set window or the reachable tail of __sys_sendmsg's iovec
+     * array. __arm64_sys_rt_sigreturn copies the user signal frame's 0x200-byte
+     * FPSIMD save area onto its own kernel stack at sp+0x50; on this image that
+     * buffer fully contains the waiter, so the copied vector registers become
+     * waiter->task/lock/wake_state (and the tree/pi_tree head). */
+    struct RtSigreturnPolicy : RoutePolicyDefaults {
+        static constexpr RouteKind kind = RouteKind::RtSigreturn;
+        static constexpr bool allows_fallback = false;
+
+        static bool supported(const profile::TargetProfile &profile) noexcept {
+            return profile.supports(kind);
+        }
+
+        static RouteStatus run(const memory::WriteRequest *request) {
+            return do_rt_sigreturn_fake_lock_route(request);
+        }
+    };
+
     /* Compile-time middleware contract (Batch 4, D1=B slice 3c): every route
      * policy must expose the side-effecting route hooks. A policy inherits the
      * neutral defaults; a signature drift or a missing hook fails here. */
@@ -163,11 +184,13 @@ namespace ghostlock::route {
     static_assert(MiddlewarePolicy<TcpPolicy>);
     static_assert(MiddlewarePolicy<MulticastPolicy>);
     static_assert(MiddlewarePolicy<SendmsgIovecPolicy>);
+    static_assert(MiddlewarePolicy<RtSigreturnPolicy>);
 
     /* The single registry. Appending a policy here wires every generic loop
      * below (variant, selection, fallback lookup, capabilities). */
     using RoutePolicyList =
-            std::tuple<SelectPolicy, TcpPolicy, MulticastPolicy, SendmsgIovecPolicy>;
+            std::tuple<SelectPolicy, TcpPolicy, MulticastPolicy, SendmsgIovecPolicy,
+                       RtSigreturnPolicy>;
 
     template<class T>
     struct variant_of;

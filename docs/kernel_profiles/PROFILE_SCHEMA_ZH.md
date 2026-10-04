@@ -88,6 +88,7 @@ route { tcp_zerocopy { compact_waiter = 1 } }
 route { select_stack { waiter_shift = -2 } }
 route { multicast_waiter { waiter_off = 96, buffer_size = 264 } }
 route { sendmsg_iovec { } }
+route { rt_sigreturn { } }
 ```
 
 - 每个路由只要求自己的分支：未采用的路由分支完全不写；分支之间不得并存（一个配置一种 path）。
@@ -104,17 +105,21 @@ route { sendmsg_iovec { } }
 - `sendmsg_iovec` **没有自己的几何字段**：用户 iovec 槽位落在 waiter 的哪个字段，是镜像的固定属性
   （`__sys_sendmsg` 的栈上 iovec 数组与残留 `rt_mutex_waiter` 重叠）。因此它的分支是空的，执行参数来自
   `execution-sendmsg-iovec.conf`。详见 `docs/analysis/sendmsg-iovec-route.md`。
+- `rt_sigreturn` 同样**没有自己的几何字段**：内核栈重叠是镜像的固定属性（`__arm64_sys_rt_sigreturn`
+  的 FPSIMD 保存区与残留 `rt_mutex_waiter` 重叠）。分支为空，执行参数来自 `execution-rt-sigreturn.conf`。
+  详见 `docs/analysis/rt-sigreturn-route.md`。
 
 ### 必填矩阵
 
-| 字段组 | tcp_zerocopy | select_stack | multicast_waiter | sendmsg_iovec |
-|---|:---:|:---:|:---:|:---:|
-| `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | 必填 | 必填 | 必填 |
-| `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | 必填 | 必填 | 必填 |
-| `kernel_major` ∈ {5,6}、`cred.copy_size`、`cred.caps_count` 及 cred 模板边界 | 必填 | 必填 | 必填 |
-| `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | 必填 | | 必填 |
-| `route.select_stack.waiter_shift` | | 必填（0 合法） | |
-| `route.multicast_waiter.waiter_off`（>0）、`route.multicast_waiter.buffer_size`、`route.multicast_waiter.task_offset`、`route.multicast_waiter.lock_offset`、`offset.empty_zero_page`、`kernelsnitch.mm_struct_sz`、`cred.ref_count`（>0） | | | 必填 |
+| 字段组 | tcp_zerocopy | select_stack | multicast_waiter | sendmsg_iovec | rt_sigreturn |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `offset.init_task` / `offset.init_cred` / `offset.root_task_group` / `offset.selinux_enforcing` | 必填 | 必填 | 必填 | 必填 | 必填 |
+| `task_struct.prio` / `task_struct.pi_lock` / `task_struct.pi_waiters` / `task_struct.pi_blocked_on` / `task_struct.cred` / `task_struct.seccomp` | 必填 | 必填 | 必填 | 必填 | 必填 |
+| `kernel_major` ∈ {5,6}、`cred.copy_size`、`cred.caps_count` 及 cred 模板边界 | 必填 | 必填 | 必填 | 必填 | 必填 |
+| `route.tcp_zerocopy.compact_waiter` / `route.multicast_waiter.compact_waiter` | 必填 | | 必填 | | |
+| `route.select_stack.waiter_shift` | | 必填（0 合法） | | | |
+| `route.multicast_waiter.waiter_off`（>0）、`route.multicast_waiter.buffer_size`、`route.multicast_waiter.task_offset`、`route.multicast_waiter.lock_offset`、`offset.empty_zero_page`、`kernelsnitch.mm_struct_sz`、`cred.ref_count`（>0） | | | 必填 | | |
+| （无路由专属字段；分支为空） | | | | - | - |
 
 cred 模板边界（通用）：`cred.usage_offset + 4 ≤ cred.copy_size`；`cred.caps_offset + cred.caps_count × 8 ≤ cred.copy_size`；`cred.ref_count ≤ 4`；每个 `cred.refN_image` 非零、`cred.refN_offset + 8 ≤ cred.copy_size`。`multicast_waiter` 还要求 `cred_copy_size ≥ 0xa0` 且 `route.multicast_waiter.waiter_off + route.multicast_waiter.lock_offset + 8 ≤ route.multicast_waiter.buffer_size`。
 

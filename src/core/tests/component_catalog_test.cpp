@@ -24,7 +24,8 @@ int32_t main(void) {
 
     for (MiddlewareKind kind : {MiddlewareKind::TcpZerocopy, MiddlewareKind::SelectStack,
                                 MiddlewareKind::MulticastWaiter,
-                                MiddlewareKind::SendmsgIovec}) {
+                                MiddlewareKind::SendmsgIovec,
+                                MiddlewareKind::RtSigreturn}) {
         assert(runtime::middleware_available(kind));
     }
     assert(!runtime::middleware_available(MiddlewareKind::Auto));
@@ -46,7 +47,8 @@ int32_t main(void) {
     const BackendKind backends[] = {BackendKind::Cve2026_43499, BackendKind::Cve2026_64560};
     const MiddlewareKind middlewares[] = {MiddlewareKind::TcpZerocopy, MiddlewareKind::SelectStack,
                                           MiddlewareKind::MulticastWaiter,
-                                          MiddlewareKind::SendmsgIovec, MiddlewareKind::Auto};
+                                          MiddlewareKind::SendmsgIovec,
+                                          MiddlewareKind::RtSigreturn, MiddlewareKind::Auto};
     int32_t catalogued = 0;
     for (FrontendKind f : frontends) {
         for (BackendKind b : backends) {
@@ -59,7 +61,7 @@ int32_t main(void) {
             }
         }
     }
-    assert(catalogued == 4);
+    assert(catalogued == 5);
     assert(runtime::combination_supported(
         {FrontendKind::RootChild, BackendKind::Cve2026_43499, MiddlewareKind::TcpZerocopy}));
     assert(runtime::combination_supported(
@@ -68,6 +70,8 @@ int32_t main(void) {
         {FrontendKind::RootChild, BackendKind::Cve2026_43499, MiddlewareKind::MulticastWaiter}));
     assert(runtime::combination_supported(
         {FrontendKind::RootChild, BackendKind::Cve2026_43499, MiddlewareKind::SendmsgIovec}));
+    assert(runtime::combination_supported(
+        {FrontendKind::RootChild, BackendKind::Cve2026_43499, MiddlewareKind::RtSigreturn}));
     assert(!runtime::combination_supported(
         {FrontendKind::RootChild, BackendKind::Cve2026_43499, MiddlewareKind::Auto}));
     assert(!runtime::combination_supported(
@@ -105,6 +109,10 @@ int32_t main(void) {
            runtime::DispatchTarget::RootChild_Cve43499_SendmsgIovec);
     assert(runtime::dispatch_target(
                {FrontendKind::RootChild, BackendKind::Cve2026_43499,
+                MiddlewareKind::RtSigreturn}) ==
+           runtime::DispatchTarget::RootChild_Cve43499_RtSigreturn);
+    assert(runtime::dispatch_target(
+               {FrontendKind::RootChild, BackendKind::Cve2026_43499,
                 MiddlewareKind::Auto}) == runtime::DispatchTarget::None);
     assert(runtime::dispatch_target(
                {FrontendKind::UmhForward, BackendKind::Cve2026_43499,
@@ -133,6 +141,10 @@ int32_t main(void) {
                   runtime::DispatchTarget::RootChild_Cve43499_SendmsgIovec);
     static_assert(runtime::dispatch_target_of(
                       FrontendKind::RootChild, BackendKind::Cve2026_43499,
+                      MiddlewareKind::RtSigreturn) ==
+                  runtime::DispatchTarget::RootChild_Cve43499_RtSigreturn);
+    static_assert(runtime::dispatch_target_of(
+                      FrontendKind::RootChild, BackendKind::Cve2026_43499,
                       MiddlewareKind::Auto) == runtime::DispatchTarget::None);
     static_assert(runtime::dispatch_target_of(
                       FrontendKind::UmhForward, BackendKind::Cve2026_43499,
@@ -146,6 +158,7 @@ int32_t main(void) {
     assert(runtime::backend_name(BackendKind::Cve2026_43499) == "cve_2026_43499");
     assert(runtime::middleware_name(MiddlewareKind::MulticastWaiter) == "multicast_waiter");
     assert(runtime::middleware_name(MiddlewareKind::SendmsgIovec) == "sendmsg_iovec");
+    assert(runtime::middleware_name(MiddlewareKind::RtSigreturn) == "rt_sigreturn");
     assert(runtime::middleware_name(MiddlewareKind::Auto) == "auto");
 
     puts("component_catalog_test: ok");

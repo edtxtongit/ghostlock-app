@@ -19,6 +19,9 @@ enum class RouteKind(
     SENDMSG_IOVEC(4u, "sendmsg_iovec", SendmsgIovecConfig.EMPTY, { value ->
         SendmsgIovecConfig.from(value)
     }),
+    RT_SIGRETURN(5u, "rt_sigreturn", RtSigreturnConfig.EMPTY, { value ->
+        RtSigreturnConfig.from(value)
+    }),
     ;
 
     fun emptyConfig(): RouteConfig = empty

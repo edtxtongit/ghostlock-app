@@ -43,6 +43,7 @@ namespace ghostlock::profile {
         SelectStack = 2,
         MulticastWaiter = 3,
         SendmsgIovec = 4,
+        RtSigreturn = 5,
     };
 
     /* Wire values for the v2 binary transport and the v1 JSON converter. */
@@ -55,6 +56,8 @@ namespace ghostlock::profile {
             std::to_underlying(RouteKind::MulticastWaiter);
     inline constexpr uint8_t kRouteSendmsgIovec =
             std::to_underlying(RouteKind::SendmsgIovec);
+    inline constexpr uint8_t kRouteRtSigreturn =
+            std::to_underlying(RouteKind::RtSigreturn);
 
     /* Single native route catalog: token <-> wire value. Adding a route means
      * one entry here plus its RoutePolicy / procedure. */
@@ -68,6 +71,7 @@ namespace ghostlock::profile {
         {"select_stack", kRouteSelectStack},
         {"multicast_waiter", kRouteMulticastWaiter},
         {"sendmsg_iovec", kRouteSendmsgIovec},
+        {"rt_sigreturn", kRouteRtSigreturn},
     };
 
     [[nodiscard]] inline uint8_t route_kind_from_string(std::string_view name) {

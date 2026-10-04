@@ -20,6 +20,7 @@ int32_t main(void) {
         {"select_stack", 2},
         {"multicast_waiter", 3},
         {"sendmsg_iovec", 4},
+        {"rt_sigreturn", 5},
     };
     assert(std::size(profile::kRouteCatalog) == std::size(expected));
     for (size_t i = 0; i < std::size(expected); i++) {

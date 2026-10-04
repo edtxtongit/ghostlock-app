@@ -640,6 +640,7 @@ private fun routeSectionName(route: UInt): String = when (RouteKind.fromWire(rou
     RouteKind.SELECT_STACK -> "route.select_stack"
     RouteKind.MULTICAST_WAITER -> "route.multicast_waiter"
     RouteKind.SENDMSG_IOVEC -> "route.sendmsg_iovec"
+    RouteKind.RT_SIGRETURN -> "route.rt_sigreturn"
     null -> ""
 }
 

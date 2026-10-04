@@ -28,11 +28,15 @@ int32_t main(void) {
     static_assert(BackendExecution<session::backend::Cve2026_43499Policy, route::MulticastPolicy>);
     static_assert(BackendExecution<session::backend::Cve2026_43499Policy,
                                    route::SendmsgIovecPolicy>);
+    static_assert(BackendExecution<session::backend::Cve2026_43499Policy,
+                                   route::RtSigreturnPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::SelectPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::TcpPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy, route::MulticastPolicy>);
     static_assert(!BackendExecution<session::backend::Cve2026_64560Policy,
                                     route::SendmsgIovecPolicy>);
+    static_assert(!BackendExecution<session::backend::Cve2026_64560Policy,
+                                    route::RtSigreturnPolicy>);
 
     /* Identity and execution policy name the same backend. */
     static_assert(session::backend::Cve2026_43499Policy::kind ==
@@ -54,8 +58,12 @@ int32_t main(void) {
     using SendmsgPipeline = runtime::Pipeline<session::frontend::RootChildPolicy,
                                               session::backend::Cve2026_43499Policy,
                                               route::SendmsgIovecPolicy>;
+    using RtSigreturnPipeline = runtime::Pipeline<session::frontend::RootChildPolicy,
+                                                  session::backend::Cve2026_43499Policy,
+                                                  route::RtSigreturnPolicy>;
     static_assert(SelectPipeline::catalogued && TcpPipeline::catalogued &&
-                  MulticastPipeline::catalogued && SendmsgPipeline::catalogued);
+                  MulticastPipeline::catalogued && SendmsgPipeline::catalogued &&
+                  RtSigreturnPipeline::catalogued);
     static_assert(SelectPipeline::target ==
                   runtime::DispatchTarget::RootChild_Cve43499_SelectStack);
     static_assert(TcpPipeline::target ==
@@ -64,6 +72,8 @@ int32_t main(void) {
                   runtime::DispatchTarget::RootChild_Cve43499_MulticastWaiter);
     static_assert(SendmsgPipeline::target ==
                   runtime::DispatchTarget::RootChild_Cve43499_SendmsgIovec);
+    static_assert(RtSigreturnPipeline::target ==
+                  runtime::DispatchTarget::RootChild_Cve43499_RtSigreturn);
 
     /* The frontend contract is symmetric with the backend one: identity plus
      * the terminal step for an available frontend. */

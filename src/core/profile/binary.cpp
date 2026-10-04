@@ -190,6 +190,14 @@ namespace ghostlock::binary_profile {
             PLAIN("timeout_us", execution.select_timeout_us),
         };
 
+        /* rt_sigreturn carries the same two execution knobs as the other
+         * fixed-layout routes; the waiter placement is a property of the image
+         * (docs/analysis/rt-sigreturn-route.md). */
+        constexpr Field kRouteRtSigreturn[] = {
+            PLAIN("enter_delay_us", execution.select_enter_delay_us),
+            PLAIN("timeout_us", execution.select_timeout_us),
+        };
+
         constexpr Field kRouteMulticast[] = {
             OPT("waiter_off", geometry.mcast_waiter_off),
             OPT("buffer_size", geometry.mcast_buffer_size),
@@ -219,6 +227,7 @@ namespace ghostlock::binary_profile {
             {"route.select_stack", kRouteSelect, std::size(kRouteSelect)},
             {"route.multicast_waiter", kRouteMulticast, std::size(kRouteMulticast)},
             {"route.sendmsg_iovec", kRouteSendmsg, std::size(kRouteSendmsg)},
+            {"route.rt_sigreturn", kRouteRtSigreturn, std::size(kRouteRtSigreturn)},
         };
 #undef PLAIN
 #undef OPT
@@ -235,6 +244,8 @@ namespace ghostlock::binary_profile {
                     return "route.multicast_waiter";
                 case profile::kRouteSendmsgIovec:
                     return "route.sendmsg_iovec";
+                case profile::kRouteRtSigreturn:
+                    return "route.rt_sigreturn";
                 default:
                     return {};
             }
@@ -290,7 +301,8 @@ namespace ghostlock::binary_profile {
             if (out->route != profile::kRouteTcpZerocopy &&
                 out->route != profile::kRouteSelectStack &&
                 out->route != profile::kRouteMulticastWaiter &&
-                out->route != profile::kRouteSendmsgIovec) {
+                out->route != profile::kRouteSendmsgIovec &&
+                out->route != profile::kRouteRtSigreturn) {
                 return -1;
             }
 

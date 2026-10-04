@@ -86,6 +86,7 @@ data class ProfileConfig(
         /** Routes a profile may declare ("" is the inference fallback). */
         val Routes = listOf(
             "tcp_zerocopy", "select_stack", "multicast_waiter", "sendmsg_iovec",
+            "rt_sigreturn",
         )
 
         /**

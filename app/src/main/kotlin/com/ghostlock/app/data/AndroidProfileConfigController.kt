@@ -878,6 +878,7 @@ internal class AndroidProfileConfigController(
             /* The sendmsg iovec route has no geometry of its own: the waiter
              * placement is a fixed property of the image. */
             "sendmsg_iovec" to emptyList(),
+            "rt_sigreturn" to emptyList(),
             "multicast_waiter" to listOf(
                 "waiter_off", "buffer_size", "task_offset", "lock_offset",
                 "compact_waiter",
