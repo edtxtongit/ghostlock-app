@@ -79,17 +79,20 @@ int32_t main(void) {
         assert(moved.stamps == 11 && moved.calls == 4 && moved.successes == 1);
     }
 
-    /* disarm is idempotent and marks the route disarmed. */
+    /* disarm is idempotent and stops the consumer, but never claims the stale
+     * waiter / pi_blocked_on was cleared. */
     context.disarm();
     context.disarm();
-    assert(context.status.kernel_disarmed == 1);
+    assert(context.status.kernel_disarmed == 0);
     assert(race.consumer_go.load() == 0);
 
-    /* destroy without a stuck consumer reports a clean fallback. */
+    /* destroy without a stuck consumer reports clean userspace only: no kernel
+     * disarm, so a clean non-OK outcome stays retryable and not fallback-safe. */
     context.destroy();
     context.destroy();
     assert(context.status.userspace_clean == 1);
-    assert(context.status.code == ghostlock::route::ROUTE_FALLBACK_SAFE);
+    assert(context.status.code == ghostlock::route::ROUTE_RETRYABLE);
+    assert(!context.status.can_fallback());
 
     /* A stuck consumer is a dirty failure with its own step. */
     {

@@ -11,10 +11,12 @@ verified; this route is not listed as a supported device yet.
   placing them needs `waiter_shift = +8`, which lands them at global words
   20/21/22 — past the 15-word fd_set window. Staying inside the window
   misplaces them by 10 qwords. No `waiter_shift` works.
-- `sendmsg_iovec`: the user iovec array reaches the waiter tail, but the image
-  zeroes the overlapping stack area before importing the iovecs, so the route
-  cannot present the whole `task/lock/wake_state` set atomically. **This route is
-  unusable and is not used by the DNN-AN00 profile.**
+- `sendmsg_iovec`: with the payload this route needs, `iov[0].iov_len` carries
+  the high-half `fake_task`, so `import_iovec`'s bit-63 check returns `-EINVAL`
+  before `iov[1].iov_base` (waiter->lock) is ever stored. The overlapping stack
+  area is additionally zeroed before the import, but the earlier length check is
+  the first failure, not `access_ok`. **This route is unusable and is not used by
+  the DNN-AN00 profile.**
 
 ## 2. Image facts
 
@@ -40,12 +42,13 @@ The FPSIMD signal record is the first record in `sigcontext.__reserved`:
 | size | `0x210` |
 | `vregs[32]` | offset `0x10`, 16 bytes each |
 
-The copy source is `record + 0x10`, i.e. `vregs[0]`; no validator reads the
-copied bytes before they land on the stack. There is **no `capable()`/LSM gate**
-on this path. The FPSIMD branch requires `system_cpucaps[36] == 0`
-(`has_no_fpsimd` absent), which holds on any CPU with the FPSIMD feature — i.e.
-the normal arm64 case; the value cannot be read from a static image and is a
-documented profile condition.
+The copied range is the 0x200-byte `vregs` array (`record + 0x10`); the 8-byte
+record header and the FPSR/FPCR pair are parsed/validated, so "unvalidated"
+applies only to the copied vector payload, not to the whole 0x210-byte record.
+There is **no `capable()`/LSM gate** on this path. The FPSIMD branch requires
+`system_cpucaps[36] == 0` (`has_no_fpsimd` absent), which holds on any CPU with
+the FPSIMD feature — i.e. the normal arm64 case; the value cannot be read from a
+static image and is a documented profile condition.
 
 ## 3. Geometry (relative to syscall entry `SP0`)
 
@@ -85,22 +88,45 @@ the current vector state, the handler returns through `rt_sigreturn`, and the
 stale waiter. The consumer thread then fires `sched_setattr` on the waiter TID,
 walking the PI chain.
 
+`wake_state` is set to `3` = `TASK_NORMAL`
+(`TASK_INTERRUPTIBLE|TASK_UNINTERRUPTIBLE`), matching what the image's own
+`futex_wait_requeue_pi` installs on its stack waiter. `3` is **not** an rt_mutex
+chainwalk enum: `RT_MUTEX_FULL_CHAINWALK` is the chainwalk code `1`, not a
+waiter `wake_state`.
+
 The crafted rb nodes that carry the write target/value live in the payload page
 that `waiter->lock` redirects the walk into (`prepare_skb_payload`), so the stack
-waiter only has to carry `task`/`lock`/`wake_state`. Writing the head
-(`tree`/`pi_tree`) here is equivalent to what the working `select_stack` route
-already does.
-
-`wake_state` is set to `3` (`RT_MUTEX_FULL`), matching what the image's own
-`futex_wait_requeue_pi` installs.
+waiter only has to carry `task`/`lock`/`wake_state`. The head (`tree`/`pi_tree`)
+is written as a zero rb node; under Linux rbtree semantics a zero node is **not**
+`RB_EMPTY_NODE` (`__rb_parent_color == (unsigned long)node` is required), so the
+walk treats it as a real `parent=left=right=0, black` node and the erase/relink
+of that topology is load-bearing, not a no-op. The resulting write is conditional
+on the forged parent's `rb_left` comparison, and `waiter_clone_prio` asserts the
+`pi_tree` is empty under `CONFIG_LOCKDEP` (target config unknown). This is a
+structural argument from android15-6.6 common, not a target-image or on-device
+proof. It is also **not byte-identical** to `select_stack`, which writes `1`
+into the ordering field where this route writes `0`; whether the two converge
+depends on the later PI re-sort.
 
 ## 5. Caveats (unproven)
 
 - Waiter reachability is **not** proven: the route assumes `current->pi_blocked_on`
-  still points at the stale waiter when the consumer fires. Same open question as
-  the other routes.
-- `disarm()` cannot interrupt an in-flight stamp loop; the loop exits only on
-  consumer success, consumer max-calls, or timeout.
+  still points at the stale waiter when the consumer fires. The image has a
+  store-zero near `pi_blocked_on` (payload `0x108b790`, `[x20,#0x938]`) but its
+  function boundary and execution order are unresolved, so the route may cover an
+  unreachable old stack frame and the PI walk may never fire.
+- Stamp/consumer handshake: the route now stamps **exactly once** and only then
+  arms the consumer, so no second `rt_sigreturn` `memset`+copy can race the
+  consumer's check-then-use of `waiter->lock`. The max-call failure branch also
+  waits for `consumer_inflight == 0` and re-reads success, so it cannot fail a
+  consumer call that is still in flight. This removes the re-stamp and
+  premature-max-call races but does not prove the consumer reads the stamped
+  waiter. A profile with no max-call budget and no timeout is bounded by an
+  internal spin cap.
+- `disarm()` stops the consumer and reports userspace cleanliness only. It does
+  **not** clear the stale waiter or `task->pi_blocked_on`, so the route never
+  claims `kernel_disarmed` and a clean non-OK outcome is never
+  `ROUTE_FALLBACK_SAFE`.
 - Not device-verified; no pstore/ramoops. `kernel_phys_offset = null` uses the
   compiled default and is untested on this unit.
 - The FPSIMD branch condition (`system_cpucaps[36] == 0`) is a runtime CPU feature

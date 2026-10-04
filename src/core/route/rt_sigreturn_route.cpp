@@ -51,7 +51,10 @@ namespace ghostlock::route::rt_sigreturn {
             }
             consumer_stuck = race->consumer_inflight.load() != 0;
         }
-        status.kernel_disarmed = !consumer_stuck;
+        /* Stopping the consumer does NOT clear the stale waiter or
+         * task->pi_blocked_on, so this route cannot assert kernel disarm.
+         * kernel_disarmed stays 0 and the outcome is never fallback-safe. */
+        status.kernel_disarmed = 0;
     }
 
     void RtSigreturnRoute::destroy() noexcept {
@@ -71,9 +74,9 @@ namespace ghostlock::route::rt_sigreturn {
             return;
         }
         status.userspace_clean = 1;
-        if (status.code != ROUTE_OK && status.kernel_disarmed) {
-            status.code = ROUTE_FALLBACK_SAFE;
-        }
+        /* Never upgrade to ROUTE_FALLBACK_SAFE: the stale PI waiter is not
+         * cleared, so the route cannot claim the kernel is disarmed. A clean
+         * non-OK outcome stays retryable and can_fallback() stays false. */
     }
 } // namespace ghostlock::route::rt_sigreturn
 
@@ -186,7 +189,6 @@ namespace ghostlock::route::rt_sigreturn {
         const int32_t max_calls =
             static_cast<int32_t>(profile.select_consumer_max_calls());
         race->route_delay_usec.store(delay_usec);
-        race->consumer_go.store(1);
 
         const int32_t tgid = static_cast<int32_t>(getpid());
         const int32_t tid = static_cast<int32_t>(syscall(SYS_gettid));
@@ -199,35 +201,61 @@ namespace ghostlock::route::rt_sigreturn {
                 static_cast<size_t>(page.fake_lock), delay_usec, timeout_ms,
                 max_calls);
 
-        bool done = false;
-        while (!done && stamps < kRtSigreturnMaxStamps) {
-            errno = 0;
-            const int32_t raised =
-                stamp_and_raise(tgid, tid, task, lock, kWakeStateValue);
-            if (stamps == 0) {
-                stamp_result = raised;
-                stamp_errno = raised < 0 ? -raised : 0;
-            }
-            stamps++;
+        /* Freeze handshake: stamp exactly once, and only then arm the consumer.
+         * rt_sigreturn completes synchronously - by the time stamp_and_raise
+         * returns, the vector registers have been copied onto the waiter
+         * thread's kernel stack. The waiter thread performs no further
+         * rt_sigreturn while the consumer walks the PI chain, so the stamped
+         * waiter is not rewritten underneath the consumer. Re-stamping would
+         * memset+rewrite the same words and race the consumer's check-then-use
+         * of waiter->lock. */
+        errno = 0;
+        const int32_t raised =
+            stamp_and_raise(tgid, tid, task, lock, kWakeStateValue);
+        stamp_result = raised;
+        stamp_errno = raised < 0 ? -raised : 0;
+        stamps = 1;
+        if (raised != 0) {
+            /* The signal never left this thread: the waiter was not stamped and
+             * arming the consumer cannot help. */
+            (void) fail(41, stamp_errno);
+            race->consumer_go.store(0);
+            calls = race->consumer_calls.load();
+            successes = race->consumer_success.load();
+            pr_info("rt_sigreturn stamp failed first=%d errno=%d\n",
+                    stamp_result, stamp_errno);
+            return status;
+        }
 
-            if (raised != 0) {
-                /* The signal never left this thread: the waiter was not stamped
-                 * and retrying cannot help. */
-                (void) fail(41, raised < 0 ? -raised : raised);
-                done = true;
-            } else if (race->consumer_success.load() > 0) {
+        race->consumer_go.store(1);
+
+        bool done = false;
+        for (int32_t spin = 0;
+             !done && spin < kRtSigreturnMaxWaitSpins; spin++) {
+            if (race->consumer_success.load() > 0) {
                 status.code = ROUTE_OK;
                 status.step = 0;
                 status.error_number = 0;
-                done = true;
-            } else if (max_calls > 0 &&
-                       race->consumer_calls.load() >= max_calls) {
-                (void) fail(43, stamp_errno);
                 done = true;
             } else if (timeout_ms > 0 &&
                        runtime_time::runtime_elapsed_ms(&route_t0) >=
                            static_cast<double>(timeout_ms)) {
                 (void) fail(44, ETIMEDOUT);
+                done = true;
+            } else if (max_calls > 0 &&
+                       race->consumer_calls.load() >= max_calls &&
+                       race->consumer_inflight.load() == 0) {
+                /* consumer_calls is bumped before sched_setattr runs, so only a
+                 * finished consumer proves the call did not succeed. Re-read
+                 * success after observing inflight==0 to close the ordering gap
+                 * (success is published before inflight is cleared). */
+                if (race->consumer_success.load() > 0) {
+                    status.code = ROUTE_OK;
+                    status.step = 0;
+                    status.error_number = 0;
+                } else {
+                    (void) fail(43, stamp_errno);
+                }
                 done = true;
             }
         }

@@ -102,7 +102,9 @@ namespace ghostlock::route::rt_sigreturn {
     inline constexpr uint32_t kLastWaiterVreg = kWakeVreg;                 /* 19 */
 
     /* wake_state value the image's own futex_wait_requeue_pi installs
-     * (mov w8,#3 -> str w8,[sp,#0xf0] on the target image). */
+     * (mov w8,#3 -> str w8,[sp,#0xf0] on the target image). 3 is the task-state
+     * bit pattern TASK_NORMAL (TASK_INTERRUPTIBLE|TASK_UNINTERRUPTIBLE), NOT an
+     * rt_mutex chainwalk code: RT_MUTEX_FULL_CHAINWALK is 1, not a wake_state. */
     inline constexpr uint32_t kWakeStateValue = 3;
 
     /* ---- compile-time placement checks ---- */

