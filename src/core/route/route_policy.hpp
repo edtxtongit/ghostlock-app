@@ -64,6 +64,10 @@ namespace ghostlock::route {
         static constexpr bool w3_exact_target = false;
         static constexpr bool tcp_payload_layout = false;
         static constexpr bool allows_fallback = false;
+        /* Waiter CPU placement: a route whose stamp->walk window dies when an
+         * async kernel entry runs on the waiter's CPU while the stamped waiter
+         * is live must pin the waiter thread off the main/consumer pair. */
+        static constexpr bool pin_waiter = false;
 
         /* Middleware route hooks (Batch 4, D1=B). Only the route steps with side
          * effects are hooks; pure capability queries stay on the
@@ -166,6 +170,11 @@ namespace ghostlock::route {
         static constexpr RouteKind kind = RouteKind::RtSigreturn;
         static constexpr bool allows_fallback = false;
         static constexpr bool ghost_disarm = true;
+        /* The FPSIMD stamp lives on the waiter's kernel stack until the
+         * consumer's chain walk consumes it; an in-window context switch on the
+         * waiter's CPU clobbers its head (QEMU isolation matrix: 19/19 OK when
+         * pinned off the main/consumer pair, 4/4 panic when sharing). */
+        static constexpr bool pin_waiter = true;
 
         static bool supported(const profile::TargetProfile &profile) noexcept {
             return profile.supports(kind);
@@ -324,6 +333,15 @@ namespace ghostlock::route {
         const profile::TargetProfile &profile) noexcept {
         return route_capability(profile, [](auto policy) {
             return std::decay_t<decltype(policy)>::ghost_disarm;
+        });
+    }
+
+    /* True when the resolved policy needs the waiter thread pinned to a CPU
+     * outside the main/consumer pair for the stamp->walk window. */
+    [[nodiscard]] inline bool route_needs_waiter_pin(
+        const profile::TargetProfile &profile) noexcept {
+        return route_capability(profile, [](auto policy) {
+            return std::decay_t<decltype(policy)>::pin_waiter;
         });
     }
 } // namespace ghostlock::route

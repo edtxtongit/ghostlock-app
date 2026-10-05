@@ -106,6 +106,9 @@ int32_t main(void) {
     static_assert(RtSigreturnPolicy::ghost_disarm && MulticastPolicy::ghost_disarm &&
                   !SelectPolicy::ghost_disarm && !TcpPolicy::ghost_disarm &&
                   !SendmsgIovecPolicy::ghost_disarm);
+    static_assert(RtSigreturnPolicy::pin_waiter && !SelectPolicy::pin_waiter &&
+                  !TcpPolicy::pin_waiter && !MulticastPolicy::pin_waiter &&
+                  !SendmsgIovecPolicy::pin_waiter);
 
     /* Every policy satisfies the registry concept. */
     static_assert(RoutePolicy<SelectPolicy> && RoutePolicy<TcpPolicy> &&
@@ -145,6 +148,10 @@ int32_t main(void) {
            route_needs_ghost_disarm(mcast_profile) &&
            !route_needs_ghost_disarm(sendmsg_profile) &&
            route_needs_ghost_disarm(rt_sigreturn_profile));
+    assert(!route_needs_waiter_pin(select_profile) && !route_needs_waiter_pin(tcp_profile) &&
+           !route_needs_waiter_pin(mcast_profile) &&
+           !route_needs_waiter_pin(sendmsg_profile) &&
+           route_needs_waiter_pin(rt_sigreturn_profile));
     assert(!route_capability(select_profile,
                              [](auto policy) {
                                  return std::decay_t<decltype(policy)>::tcp_payload_layout;
