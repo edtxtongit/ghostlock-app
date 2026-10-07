@@ -3,6 +3,7 @@ package com.ghostlock.app.shizuku
 import android.content.Context
 import android.os.Process
 import androidx.annotation.Keep
+import com.ghostlock.app.data.CustomLaunchConf
 import com.ghostlock.app.data.NativeProfileDocument
 import java.io.File
 import java.io.RandomAccessFile
@@ -25,6 +26,8 @@ class GhostlockUserService(private val context: Context) : IGhostlockUserService
         forceAttack: Boolean,
         profileBlob: ByteArray,
         debugDir: String?,
+        customLaunchProgram: String,
+        customLaunchArguments: String,
         callback: IGhostlockCallback,
         statusCallback: IGhostlockStatusCallback,
     ) {
@@ -57,6 +60,8 @@ class GhostlockUserService(private val context: Context) : IGhostlockUserService
                 val workDir = File("/data/local/tmp/ghostlock-app").apply {
                     require(isDirectory || mkdirs()) { "cannot create $absolutePath" }
                 }
+                File(workDir, CustomLaunchConf.FileName)
+                    .writeText(CustomLaunchConf.render(customLaunchProgram, customLaunchArguments))
                 callback.onLog("<s> Shizuku ready: uid=${Process.myUid()} Seccomp=0")
                 callback.onLog("<s> kernel: $release")
                 val nativeLog = File(workDir, ".ghostlock_native.log")

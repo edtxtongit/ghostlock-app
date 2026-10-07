@@ -48,6 +48,17 @@ data class ExecutionFieldValue(
     val overridden: Boolean,
 )
 
+/**
+ * App-configured program launched by the root script once the handoff is done.
+ * An empty [program] disables it; [arguments] is passed as-is (shell-split).
+ */
+data class CustomLaunchConfig(
+    val program: String = "",
+    val arguments: String = "",
+) {
+    val enabled: Boolean get() = program.isNotBlank()
+}
+
 /** Debug-only export preferences shown by the hidden debug screen. */
 data class DebugSettings(
     val exportEnabled: Boolean = true,

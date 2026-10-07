@@ -254,4 +254,13 @@
     <string name="fallback_label">Fallback route</string>
     <string name="fallback_none">None</string>
     <string name="field_fallback_to">fallback_to</string>
+    <string name="custom_launch_title">Custom launcher</string>
+    <string name="custom_launch_summary">Run a program of your choice after the handoff</string>
+    <string name="custom_launch_enable">Enable custom launcher</string>
+    <string name="custom_launch_enable_summary">Start the program below in the background once root is ready</string>
+    <string name="custom_launch_program">Program path (absolute)</string>
+    <string name="custom_launch_program_hint">Example: /data/local/tmp/myshell. Missing execute permission is fixed automatically with chmod +x.</string>
+    <string name="custom_launch_arguments">Arguments</string>
+    <string name="custom_launch_warning_title">Warning</string>
+    <string name="custom_launch_warning">The program is started as root and runs in the background. A harmful or buggy program can break or brick this device. Only configure files you trust.</string>
 </resources>

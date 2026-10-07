@@ -1,6 +1,7 @@
 package com.ghostlock.app.domain.repository
 
 import com.ghostlock.app.domain.model.CpuPair
+import com.ghostlock.app.domain.model.CustomLaunchConfig
 import com.ghostlock.app.domain.model.DebugSettings
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.OffsetCandidate
@@ -98,6 +99,11 @@ interface GhostlockRepository {
     fun profileController(): ProfileConfigController
 
     suspend fun debugSettings(): DebugSettings
+
+    /** Program the root script launches after the handoff (empty = disabled). */
+    suspend fun customLaunch(): CustomLaunchConfig
+
+    fun setCustomLaunch(config: CustomLaunchConfig)
 
     fun setDebugExportEnabled(enabled: Boolean)
 

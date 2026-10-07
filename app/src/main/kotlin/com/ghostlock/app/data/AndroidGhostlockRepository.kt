@@ -11,6 +11,7 @@ import androidx.core.net.toUri
 import com.ghostlock.app.BuildConfig
 import com.ghostlock.app.BuildInfo
 import com.ghostlock.app.domain.model.CpuPair
+import com.ghostlock.app.domain.model.CustomLaunchConfig
 import com.ghostlock.app.domain.model.DebugSettings
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.OffsetCandidate
@@ -50,6 +51,8 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         const val PrefDebugExportLocation = "debug_export_location"
         const val PrefDebugKernelLogEnabled = "debug_kernel_log_enabled"
         const val PrefDebugProfileOverrides = "debug_profile_overrides"
+        const val PrefCustomLaunchProgram = "custom_launch_program"
+        const val PrefCustomLaunchArguments = "custom_launch_arguments"
 
         /* U01-S14: per-run KernelSU log name; the resolved path travels to
          * the native process via GHOSTLOCK_KSU_LOG. */
@@ -220,6 +223,30 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
 
     override fun setDebugKernelLogEnabled(enabled: Boolean) {
         preferences.edit { putBoolean(PrefDebugKernelLogEnabled, enabled) }
+    }
+
+    /* custom-launcher: the program the root script starts after the handoff. */
+    override suspend fun customLaunch(): CustomLaunchConfig = CustomLaunchConfig(
+        program = preferences.getString(PrefCustomLaunchProgram, null).orEmpty(),
+        arguments = preferences.getString(PrefCustomLaunchArguments, null).orEmpty(),
+    )
+
+    override fun setCustomLaunch(config: CustomLaunchConfig) {
+        preferences.edit {
+            putString(PrefCustomLaunchProgram, config.program.trim())
+            putString(PrefCustomLaunchArguments, config.arguments.trim())
+        }
+    }
+
+    /** Publish the app-configured launcher next to the native home so the root
+     *  script can source it; an empty program disables the launcher. */
+    private fun writeCustomLaunchConf(home: File) {
+        val program = preferences.getString(PrefCustomLaunchProgram, null).orEmpty()
+        val arguments = preferences.getString(PrefCustomLaunchArguments, null).orEmpty()
+        runCatching {
+            File(home, CustomLaunchConf.FileName)
+                .writeText(CustomLaunchConf.render(program, arguments))
+        }
     }
 
     private fun normalizeDebugLocation(value: String?): String {
@@ -427,8 +454,10 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                     dumpRuntimeProfile(archivedLog, writeSidecar, release, pair, runtimeBlob)
                     archivedLog("<b> starting UserService")
                     resetRunState()
+                    val customLaunch = customLaunch()
                     shizukuRunner.run(
-                        pair, safeModeEnabled, forceAttackTest, profileBlob, debugDir, archivedLog,
+                        pair, safeModeEnabled, forceAttackTest, profileBlob, debugDir,
+                        customLaunch.program, customLaunch.arguments, archivedLog,
                     ) { step, status ->
                         if (status == "disabled") clearRunState() else applyRunStatus(step, status)
                     }
@@ -579,6 +608,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
             val ksuLog = File(workDir, ksuLogName(System.currentTimeMillis()))
             val nativeLog = File(workDir, NativeLogFileName)
             nativeLog.writeText("")
+            writeCustomLaunchConf(workDir)
             val release = System.getProperty("os.version", "").orEmpty()
             val config = profileController.load(release, pair)
             onLog(

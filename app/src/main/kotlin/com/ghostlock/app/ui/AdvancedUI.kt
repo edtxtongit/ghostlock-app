@@ -194,6 +194,15 @@ internal fun AdvancedScreen(
                     )
                 }
             }
+            item(key = "customLaunch") {
+                Card {
+                    ArrowPreference(
+                        title = stringResource(R.string.custom_launch_title),
+                        summary = stringResource(R.string.custom_launch_summary),
+                        onClick = actions::onOpenCustomLaunch,
+                    )
+                }
+            }
             item(key = "export") {
                 Card {
                     Column {
@@ -239,6 +248,83 @@ internal fun AdvancedScreen(
                         title = stringResource(R.string.about),
                         summary = stringResource(R.string.about_summary),
                         onClick = actions::onShowAbout,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Custom launcher: the program the root script starts after the handoff. */
+@Composable
+internal fun CustomLaunchScreen(
+    state: GhostlockUiState,
+    actions: GhostlockActions,
+) {
+    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = stringResource(R.string.custom_launch_title),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    IconButton(onClick = actions::onCloseCustomLaunch) {
+                        Icon(
+                            imageVector = MiuixIcons.Back,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .scrollEndHaptic()
+                .overScrollVertical()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = pageContentPadding(paddingValues),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "warning") {
+                ProfileHintBanner(
+                    text = stringResource(R.string.custom_launch_warning),
+                    title = stringResource(R.string.custom_launch_warning_title),
+                    warning = true,
+                )
+            }
+            item(key = "enable") {
+                Card {
+                    SwitchPreference(
+                        checked = state.customLaunchEnabled,
+                        onCheckedChange = actions::onCustomLaunchEnabledChanged,
+                        title = stringResource(R.string.custom_launch_enable),
+                        summary = stringResource(R.string.custom_launch_enable_summary),
+                    )
+                }
+            }
+            if (state.customLaunchEnabled) {
+                item(key = "program") {
+                    TextField(
+                        value = state.customLaunchProgram,
+                        onValueChange = actions::onCustomLaunchProgramChanged,
+                        label = stringResource(R.string.custom_launch_program),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        singleLine = true,
+                    )
+                }
+                item(key = "programHint") {
+                    ProfileHintBanner(text = stringResource(R.string.custom_launch_program_hint))
+                }
+                item(key = "arguments") {
+                    TextField(
+                        value = state.customLaunchArguments,
+                        onValueChange = actions::onCustomLaunchArgumentsChanged,
+                        label = stringResource(R.string.custom_launch_arguments),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        singleLine = true,
                     )
                 }
             }

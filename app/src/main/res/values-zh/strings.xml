@@ -254,4 +254,13 @@
     <string name="fallback_label">回退路由</string>
     <string name="fallback_none">无</string>
     <string name="field_fallback_to">回退目标</string>
+    <string name="custom_launch_title">自定义启动程序</string>
+    <string name="custom_launch_summary">注入完成后启动你选择的程序</string>
+    <string name="custom_launch_enable">启用自定义启动程序</string>
+    <string name="custom_launch_enable_summary">获得 root 后以后台方式启动下面的程序</string>
+    <string name="custom_launch_program">程序路径（绝对路径）</string>
+    <string name="custom_launch_program_hint">例如 /data/local/tmp/myshell。若没有可执行权限会自动 chmod +x。</string>
+    <string name="custom_launch_arguments">参数</string>
+    <string name="custom_launch_warning_title">警告</string>
+    <string name="custom_launch_warning">该程序会以 root 身份在后台运行。有害或有缺陷的程序可能导致设备故障甚至变砖，请只配置你信任的文件。</string>
 </resources>

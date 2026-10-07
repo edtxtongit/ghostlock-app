@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ghostlock.app.R
 import com.ghostlock.app.domain.model.CpuPair
+import com.ghostlock.app.domain.model.CustomLaunchConfig
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.LogTone
 import com.ghostlock.app.domain.model.OffsetImportResult
@@ -237,6 +238,7 @@ class GhostlockViewModel(
                 builtinScreenVisible = false,
                 profileOverrideVisible = false,
                 advancedOverrideVisible = false,
+                customLaunchVisible = false,
             )
         }
     }
@@ -436,11 +438,52 @@ class GhostlockViewModel(
     }
 
     fun onShowAbout() {
-        mutableState.update { it.copy(aboutVisible = true) }
+        mutableState.update { it.copy(aboutVisible = true, customLaunchVisible = false) }
     }
 
     fun onCloseAbout() {
         mutableState.update { it.copy(aboutVisible = false) }
+    }
+
+    /** Opens the custom-launcher screen and loads the stored program/arguments. */
+    fun onOpenCustomLaunch() {
+        mutableState.update {
+            it.copy(aboutVisible = false, parametersVisible = false, customLaunchVisible = true)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = repository.customLaunch()
+            mutableState.update {
+                it.copy(
+                    customLaunchProgram = config.program,
+                    customLaunchArguments = config.arguments,
+                    customLaunchEnabled = config.enabled,
+                )
+            }
+        }
+    }
+
+    fun onCloseCustomLaunch() {
+        mutableState.update { it.copy(customLaunchVisible = false) }
+    }
+
+    fun onCustomLaunchEnabledChanged(enabled: Boolean) {
+        mutableState.update { it.copy(customLaunchEnabled = enabled) }
+        if (!enabled) persistCustomLaunch("", "")
+    }
+
+    fun onCustomLaunchProgramChanged(value: String) {
+        mutableState.update { it.copy(customLaunchProgram = value) }
+        persistCustomLaunch(value, state.value.customLaunchArguments)
+    }
+
+    fun onCustomLaunchArgumentsChanged(value: String) {
+        mutableState.update { it.copy(customLaunchArguments = value) }
+        persistCustomLaunch(state.value.customLaunchProgram, value)
+    }
+
+    private fun persistCustomLaunch(program: String, arguments: String) {
+        val config = CustomLaunchConfig(program, arguments)
+        viewModelScope.launch(Dispatchers.IO) { repository.setCustomLaunch(config) }
     }
 
     fun onDebugExportChanged(enabled: Boolean) {

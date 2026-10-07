@@ -208,6 +208,16 @@ private fun GhostlockRoute(
             override fun onCloseAdvanced() = viewModel.onCloseAdvanced()
             override fun onShowAbout() = viewModel.onShowAbout()
             override fun onCloseAbout() = viewModel.onCloseAbout()
+            override fun onOpenCustomLaunch() = viewModel.onOpenCustomLaunch()
+            override fun onCloseCustomLaunch() = viewModel.onCloseCustomLaunch()
+            override fun onCustomLaunchEnabledChanged(enabled: Boolean) =
+                viewModel.onCustomLaunchEnabledChanged(enabled)
+
+            override fun onCustomLaunchProgramChanged(value: String) =
+                viewModel.onCustomLaunchProgramChanged(value)
+
+            override fun onCustomLaunchArgumentsChanged(value: String) =
+                viewModel.onCustomLaunchArgumentsChanged(value)
             override fun onDebugExportChanged(enabled: Boolean) = viewModel.onDebugExportChanged(enabled)
             override fun onDebugExportLocationPick() = viewModel.onDebugExportLocationPick()
             override fun onDebugKernelLogChanged(enabled: Boolean) =

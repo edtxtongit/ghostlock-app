@@ -133,6 +133,10 @@ data class GhostlockUiState(
     val debugExportLocation: String = "",
     val debugKernelLogEnabled: Boolean = true,
     val aboutVisible: Boolean = false,
+    val customLaunchVisible: Boolean = false,
+    val customLaunchEnabled: Boolean = false,
+    val customLaunchProgram: String = "",
+    val customLaunchArguments: String = "",
     val parametersVisible: Boolean = false,
     val profileOverrideVisible: Boolean = false,
     val advancedOverrideVisible: Boolean = false,
@@ -203,6 +207,11 @@ interface GhostlockActions {
     fun onCloseAdvanced()
     fun onShowAbout()
     fun onCloseAbout()
+    fun onOpenCustomLaunch()
+    fun onCloseCustomLaunch()
+    fun onCustomLaunchEnabledChanged(enabled: Boolean)
+    fun onCustomLaunchProgramChanged(value: String)
+    fun onCustomLaunchArgumentsChanged(value: String)
     fun onDebugExportChanged(enabled: Boolean)
     fun onDebugExportLocationPick()
     fun onDebugKernelLogChanged(enabled: Boolean)
@@ -235,6 +244,7 @@ internal sealed interface GhostlockScreen : NavKey {
     data object Main : GhostlockScreen
     data object Advanced : GhostlockScreen
     data object About : GhostlockScreen
+    data object CustomLaunch : GhostlockScreen
     data object Parameters : GhostlockScreen
     data object LoadConfig : GhostlockScreen
     data object Builtin : GhostlockScreen
@@ -249,6 +259,10 @@ internal fun navigationPath(state: GhostlockUiState): List<GhostlockScreen> {
     path += GhostlockScreen.Advanced
     if (state.aboutVisible) {
         path += GhostlockScreen.About
+        return path
+    }
+    if (state.customLaunchVisible) {
+        path += GhostlockScreen.CustomLaunch
         return path
     }
     if (!state.parametersVisible) return path
@@ -284,6 +298,7 @@ private fun closeScreen(screen: GhostlockScreen, actions: GhostlockActions) {
         GhostlockScreen.Main -> Unit
         GhostlockScreen.Advanced -> actions.onCloseAdvanced()
         GhostlockScreen.About -> actions.onCloseAbout()
+        GhostlockScreen.CustomLaunch -> actions.onCloseCustomLaunch()
         GhostlockScreen.Parameters -> actions.onCloseParameters()
         GhostlockScreen.LoadConfig -> actions.onCloseLoadConfig()
         GhostlockScreen.Builtin -> actions.onCloseBuiltinProfiles()
@@ -344,6 +359,9 @@ internal fun GhostlockApp(
                     }
                     entry<GhostlockScreen.About>(swipeDismiss = swipeBack) {
                         AboutScreen(onBack = actions::onCloseAbout)
+                    }
+                    entry<GhostlockScreen.CustomLaunch>(swipeDismiss = swipeBack) {
+                        CustomLaunchScreen(state = state, actions = actions)
                     }
                     entry<GhostlockScreen.Parameters>(swipeDismiss = swipeBack) {
                         ParameterScreen(state = state, actions = actions)
