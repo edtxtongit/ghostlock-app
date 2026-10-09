@@ -29,9 +29,9 @@ adb shell chmod 755 /data/local/tmp/ghostlock
 adb shell /data/local/tmp/ghostlock --load-prebuilt-profile /data/local/tmp/profile.bin
 ```
 
-## Profile extraction
+## Profile extraction (standalone tool)
 
-`tools/extract_rs` derives profile offsets from a `boot.img` (+ optional `xbl_config.img`), a full OTA ZIP, or an `http(s)` URL. kallsyms: `--kallsyms` or the image's embedded table. `pselect_waiter_shift` and `off_slide_loggers_0_1` are derived by the built-in arm64 disassembler. MediaTek images have no `xbl_config.img` and usually no BTF; the physical load address is derived from kallsyms `_text` (override `--phys`).
+`tools/extract_rs` is a separate command-line program; the Android app does not parse images, payloads, OTA packages, or OTA URLs. Run the extractor outside the app (on a computer, or as a manually cross-compiled standalone binary on Android), write a profile file, then import that file in GhostLock. The tool derives profile offsets from a `boot.img` (optionally with `xbl_config.img` / `uefi.img`), a full OTA ZIP, or an `http(s)` URL. kallsyms: `--kallsyms` or the image's embedded table. `pselect_waiter_shift` and `off_slide_loggers_0_1` are derived by the built-in arm64 disassembler. MediaTek images have no `xbl_config.img` and usually no BTF; the physical load address is derived from kallsyms `_text` (override `--phys`).
 
 ```powershell
 Push-Location tools/extract_rs
@@ -39,9 +39,11 @@ cargo build --release
 Pop-Location
 build/extract/release/ghostlock-extract.exe boot.img --xbl-config xbl_config.img --format conf --out profile.conf
 build/extract/release/ghostlock-extract.exe OTA.zip --format conf --out profile.conf
+# Or pass an OTA URL instead of a local archive:
+build/extract/release/ghostlock-extract.exe "https://example.invalid/update.zip" --format conf --out profile.conf
 ```
 
-`--format conf` writes a flattened, self-contained profile (no `include`; shared constants inlined; route from `--analysis` evidence unless `--route` overrides). It emits each field the image provides and omits the rest; missing or invalid fields are caught by pre-run validation. On 5.x it also derives fields from kernel symbols and BTF. `--format json` is kept for the v1 import path. To add a built-in profile, complete and validate the matching version-family template, save it as a standalone `.conf`, and add it to `kernel_profiles/index.conf`. The old C `offsets.h` registry is deprecated and removed.
+`--format conf` writes a flattened, self-contained profile (no `include`; shared constants inlined; route from `--analysis` evidence unless `--route` overrides). It emits each field the image provides and omits the rest; missing or invalid fields are caught by pre-run validation. On 5.x it also derives fields from kernel symbols and BTF. `--format json` is retained for the legacy v1 import path. To add a built-in profile, complete and validate the matching version-family template, save it as a standalone `.conf`, and add it to `kernel_profiles/index.conf`. The old C `offsets.h` registry is deprecated and removed.
 
 ### MediaTek
 
@@ -49,11 +51,11 @@ No `xbl_config.img` and usually no embedded BTF: the extractor cannot derive `ke
 
 ### Preflight
 
-The extractor runs a preflight check on the image before extracting offsets. Images that fail it are rejected with exit code `6`.
+The standalone extractor runs a preflight check on the image before extracting offsets. Images that fail it are rejected with exit code `6`.
 
-### On-device analysis
+### Optional: run the standalone extractor on Android
 
-A full OTA can be analyzed on the phone: `boot` + `xbl_config` are extracted automatically. Pass `--work-dir` an app-writable dir when running inside the app sandbox. Cross-compile and push:
+This is a manual CLI workflow, not an app feature. Cross-compile the separate Rust executable, push it to the device, run it from a shell, and write the generated profile somewhere accessible (for example, Downloads):
 
 ```powershell
 rustup target add aarch64-linux-android
@@ -65,14 +67,15 @@ Push-Location tools/extract_rs
 cargo build --release --target aarch64-linux-android
 Pop-Location
 adb push build/extract/aarch64-linux-android/release/ghostlock-extract /data/local/tmp/
-adb shell /data/local/tmp/ghostlock-extract /sdcard/OTA.zip
+adb shell chmod 755 /data/local/tmp/ghostlock-extract
+adb shell /data/local/tmp/ghostlock-extract /sdcard/OTA.zip --format conf --out /sdcard/Download/profile.conf
 ```
 
-### Importing offsets without rebuilding the app
+### Import the generated profile in the app
 
-**Import offsets.conf (HOCON)** takes the extractor's flattened `.conf`; **Import offsets.json (v1)** takes an older JSON report, converted in-app. Imports merge across files; an existing release prompts before overwrite.
+In GhostLock, open **Advanced → Load config** and choose **Import offsets.conf (HOCON)** for the standalone extractor's `.conf` output. **Import offsets.json (v1)** remains available for older JSON reports. If a profile references include files, select the profile and its include files together in the document picker. If a release already has offsets, the app asks before overwriting them. The extractor output is imported as a file; the app does not launch the extractor or download/process OTA content itself.
 
-**Parse OTA link** (full OTA ZIP URL) and **Parse image** (`boot.img` + optional `xbl_config.img`) run the extractor in-process and write a flattened `.conf` into the app data dir:
+Example of the standalone extractor's HOCON output:
 
 ```hocon
 # GhostLock profile: 6.12.38-android16-5-g844001fb8721-ab14552068-4k (HOCON, self-contained).

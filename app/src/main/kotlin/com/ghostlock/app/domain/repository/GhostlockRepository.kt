@@ -6,7 +6,6 @@ import com.ghostlock.app.domain.model.DebugSettings
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.OffsetCandidate
 import com.ghostlock.app.domain.model.OffsetImportResult
-import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.ProfileConfig
 import com.ghostlock.app.domain.model.UserProfileFile
 
@@ -31,17 +30,7 @@ interface GhostlockRepository {
 
     suspend fun confirmImport(documents: Map<String, String>): OffsetImportResult
 
-    suspend fun parseSource(
-        input: String,
-        xblPath: String? = null,
-        uefiPath: String? = null,
-        overwrite: Boolean = false,
-        onLog: (String) -> Unit = {},
-    ): ParseResult
-
     suspend fun readDocument(uri: String): String
-
-    suspend fun cacheDocument(uri: String, fileName: String): String
 
     suspend fun publishOffsets(candidate: OffsetCandidate): String
 

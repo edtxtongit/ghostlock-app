@@ -169,13 +169,12 @@ tasks.named("preBuild") {
 /* The arm64 native payload is only needed by the tasks that merge/package the
  * APK/AAB. Keeping it off preBuild means pure JVM unit tests
  * (:app:testDebugUnitTest) no longer build the native binaries, so a developer
- * machine without the NDK / aarch64 Rust target can still run them. */
+ * machine without the NDK can still run them. */
 tasks.matching { task ->
     (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) ||
         (task.name.startsWith("merge") && task.name.endsWith("NativeLibs"))
 }.configureEach {
     dependsOn(rootProject.tasks.named("prepareGhostlockJniLibs"))
-    dependsOn(rootProject.tasks.named("prepareGhostlockExtractJniLibs"))
 }
 
 dependencies {
@@ -183,7 +182,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation:1.12.1")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("com.typesafe:config:1.4.9")
-    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("top.yukonga.miuix.kmp:miuix-ui:0.9.4")

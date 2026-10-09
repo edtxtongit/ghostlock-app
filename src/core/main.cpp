@@ -11,6 +11,7 @@
  */
 
 #include "common.h"
+#include "attack/ops.hpp"
 
 #include "profile/entry.h"
 #include "support/fatal_error.hpp"
@@ -26,6 +27,11 @@ using namespace ghostlock;
 
 
 int main(int argc, char **argv) {
+    if (argc > 1 &&
+        std::string_view(argv[1]) == "--ghostlock-launch-isolated") {
+        return attack::launch_custom_program_isolated(argc, argv);
+    }
+
     try {
         profile::kernel_offsets decoded = {};
         std::array<char, 256> release_buf{};

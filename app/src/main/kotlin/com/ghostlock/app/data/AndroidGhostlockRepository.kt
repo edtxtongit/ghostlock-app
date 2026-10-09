@@ -15,9 +15,7 @@ import com.ghostlock.app.domain.model.CustomLaunchConfig
 import com.ghostlock.app.domain.model.DebugSettings
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.OffsetCandidate
-import com.ghostlock.app.data.ota.OtaPayloadExtractor
 import com.ghostlock.app.domain.model.OffsetImportResult
-import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.ProfileConfig
 import com.ghostlock.app.domain.model.UserProfileFile
 import com.ghostlock.app.domain.repository.GhostlockRepository
@@ -44,7 +42,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         const val LegacyOffsetsFileName = "offsets.json"
         const val UserProfilesDirectoryName = "user_profiles"
         const val EditSessionPreferences = "ghostlock_edit_session"
-        const val ExtractBinaryName = "libextract.so"
         const val DefaultDebugLocation = "Download/ghostlock-debug-log"
         const val PrefForceAttackTest = "force_attack_test"
         const val PrefDebugExportEnabled = "debug_export_enabled"
@@ -98,7 +95,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     /** True once the user flipped the toggle; only then does it override the
      * profile suggestion (PROFILE-SUGGEST-01). */
     private var shizukuPreferenceSet = false
-    private var pendingParsedDocument: PendingParsedDocument? = null
     private val shizukuRunner = ShizukuExploitRunner(appContext)
 
     init {
@@ -316,111 +312,13 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         return entries.takeIf { it.isNotEmpty() }
     }
 
-    override suspend fun parseSource(
-        input: String,
-        xblPath: String?,
-        uefiPath: String?,
-        overwrite: Boolean,
-        onLog: (String) -> Unit,
-    ): ParseResult {
-        val parsedFile = File(filesDir, "offsets_parse.tmp")
-        var tempBootFile: File? = null
-        var tempXblFile: File? = null
-        return try {
-            if (overwrite) {
-                val pending = pendingParsedDocument
-                if (pending != null) {
-                    pendingParsedDocument = null
-                    dropReplacedDocuments(pending.releases)
-                    userProfileStore.save(pending.name, pending.text)
-                    return ParseResult.Parsed(pending.releases, pending.missing, pending.name)
-                }
-            }
-            val binary = File(appContext.applicationInfo.nativeLibraryDir, ExtractBinaryName)
-            if (!binary.isFile) return ParseResult.Failed(1, "missing native binary: ${binary.absolutePath}")
-
-            /* Remote OTA URLs are resolved by the pure-Kotlin extractor so the
-             * Android binary ships without the http stack; local files keep
-             * going straight to the Rust extractor. */
-            val isRemoteUrl = input.startsWith("http://", ignoreCase = true) ||
-                input.startsWith("https://", ignoreCase = true)
-            val (effectiveInput, effectiveXblPath) = if (isRemoteUrl) {
-                val extracted = OtaPayloadExtractor.extractPartitions(
-                    url = input,
-                    workDir = filesDir,
-                    onLog = onLog,
-                )
-                tempBootFile = extracted.bootFile
-                tempXblFile = extracted.xblConfigFile
-                Pair(extracted.bootFile.absolutePath, extracted.xblConfigFile?.absolutePath ?: xblPath)
-            } else {
-                Pair(input, xblPath)
-            }
-
-            parsedFile.delete()
-            val args = buildList {
-                add(effectiveInput)
-                if (effectiveXblPath != null) {
-                    add("--xbl-config")
-                    add(effectiveXblPath)
-                }
-                if (uefiPath != null) {
-                    add("--uefi")
-                    add(uefiPath)
-                }
-                /* --format conf: the extractor output is already the flattened
-                 * profile (no includes, credential template inlined), so the
-                 * stored document needs no legacy conversion. */
-                addAll(listOf("--format", "conf", "--out", parsedFile.absolutePath, "--work-dir", filesDir.absolutePath))
-            }
-            onLog("<k> extract: $effectiveInput")
-            val code = runProcess(
-                ProcessBuilder(listOf(binary.absolutePath) + args).directory(filesDir).redirectErrorStream(true).apply {
-                        environment()["GHOSTLOCK_HOME"] = filesDir.absolutePath
-                        environment()["TMPDIR"] = filesDir.absolutePath
-                        environment()["HOME"] = filesDir.absolutePath
-                    },
-                onLog = onLog,
-                timeoutSeconds = 1800,
-            )
-            onLog("<k> extract exit code=$code")
-            if (code != 0 || !parsedFile.isFile) return ParseResult.Failed(code)
-            val document = parsedFile.readText()
-            val fresh = parseEntries(document) ?: return ParseResult.Failed(code, "invalid extractor output")
-            /* Parsed reports are stored as-is, even when they match a bundled
-             * profile; loading decides whether they take effect. */
-            val filtered = fresh.mapNotNull { it.asValueMap() }
-                .filter { (it["release"] as? String).orEmpty().isNotEmpty() }
-            if (filtered.isEmpty()) return ParseResult.AlreadyPresent
-            val releases = freshReleases(filtered)
-            val missing = missingSidecarFields(filtered)
-            val overlaps = releases.filter { userProfileStore.containsRelease(it) }
-            val name = parsedDocumentName(releases)
-            if (!overwrite && overlaps.isNotEmpty()) {
-                pendingParsedDocument = PendingParsedDocument(name, document, releases, missing)
-                return ParseResult.RequiresOverwrite(overlaps, missing)
-            }
-            dropReplacedDocuments(releases)
-            userProfileStore.save(name, document)
-            ParseResult.Parsed(releases, missing, name)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            ParseResult.Failed(1, error.message)
-        } finally {
-            parsedFile.delete()
-            tempBootFile?.delete()
-            tempXblFile?.delete()
-        }
-    }
-
     override suspend fun runExploit(pair: CpuPair, onLog: (String) -> Unit): Int =
         withDebugAttackLog("direct", onLog) { archivedLog, debugDir, writeSidecar ->
             runExploitBinary(pair, "libghostlock.so", archivedLog, debugDir, writeSidecar)
         }
 
-    override suspend fun runExploitWithShizuku(pair: CpuPair, onLog: (String) -> Unit): Int {
-        return withDebugAttackLog("shizuku", onLog) { archivedLog, debugDir, writeSidecar ->
+    override suspend fun runExploitWithShizuku(pair: CpuPair, onLog: (String) -> Unit): Int =
+        withDebugAttackLog("shizuku", onLog) { archivedLog, debugDir, writeSidecar ->
             archivedLog("<s> resolving profile")
             val release = System.getProperty("os.version", "").orEmpty()
             val config = profileController.load(release, pair)
@@ -464,7 +362,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                 }
             }
         }
-    }
 
     /* --- attack step status ------------------------------------------------
      * The native process reports each step over stdout and waits for an ACK on
@@ -712,14 +609,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     override suspend fun readDocument(uri: String): String =
         appContext.contentResolver.openInputStream(uri.toUri())?.bufferedReader()?.use { it.readText() } ?: throw IOException("cannot open $uri")
 
-    override suspend fun cacheDocument(uri: String, fileName: String): String {
-        val target = File(filesDir, fileName)
-        appContext.contentResolver.openInputStream(uri.toUri())?.use { input ->
-            target.outputStream().use(input::copyTo)
-        } ?: throw IOException("cannot open $uri")
-        return target.absolutePath
-    }
-
     override suspend fun userProfiles(): List<UserProfileFile> =
         withContext(Dispatchers.IO) {
             userProfileStore.list().map { stored ->
@@ -894,10 +783,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         }
     }
 
-    /**
-     * Legacy/parse helper: reads HOCON or JSON text into a list of entries.
-     * Stored user documents are parsed by [UserProfileStore] instead.
-     */
+    /** Reads the legacy offsets cache during one-time migration; imported documents use [UserProfileStore]. */
     private fun parseEntries(text: String): ValueList? {
         if (text.isBlank()) return null
         return try {
@@ -909,31 +795,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private class PendingParsedDocument(
-        val name: String,
-        val text: String,
-        val releases: List<String>,
-        val missing: Set<String>,
-    )
-
-    /**
-     * Fields a parsed profile still lacks that only an xbl_config FDT or uefi
-     * memory map can fill. Used to prompt for the optional sidecars.
-     */
-    private fun missingSidecarFields(entries: List<ValueMap>): Set<String> =
-        if (entries.isNotEmpty() && entries.all { it.getLongAt("kernel_phys_load") == null }) {
-            setOf("kernel_phys_load")
-        } else {
-            emptySet()
-        }
-
-    private fun parsedDocumentName(releases: List<String>): String {
-        val stem = releases.firstOrNull().orEmpty()
-            .replace(Regex("[^A-Za-z0-9._-]"), "_")
-            .ifEmpty { "parsed" }
-        return "$stem.conf"
     }
 
     private fun freshReleases(entries: List<*>): List<String> =

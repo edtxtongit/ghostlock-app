@@ -31,11 +31,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private var pendingDocumentRequest: DocumentRequest? = null
-    private val documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        val request = pendingDocumentRequest
-        pendingDocumentRequest = null
-        if (uri != null && request != null) viewModel.onDocumentResult(request, uri.toString())
-    }
     private val documentsPicker =
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
             val request = pendingDocumentRequest
@@ -89,15 +84,8 @@ class MainActivity : ComponentActivity() {
 
                     DocumentRequest.ImportOffsetsJson ->
                         arrayOf("application/json", "text/plain", "application/octet-stream")
-
-                    else -> arrayOf("*/*")
                 }
-                when (effect.request) {
-                    DocumentRequest.ImportOffsetsHocon, DocumentRequest.ImportOffsetsJson ->
-                        documentsPicker.launch(mimeTypes)
-
-                    else -> documentPicker.launch(mimeTypes)
-                }
+                documentsPicker.launch(mimeTypes)
             }
 
             GhostlockEffect.PickDebugFolder -> folderPicker.launch(null)
@@ -179,15 +167,12 @@ private fun GhostlockRoute(
             override fun onDocumentsResult(request: DocumentRequest, uris: List<String>) =
                 viewModel.onDocumentsResult(request, uris)
 
-            override fun onParseOta() = viewModel.promptParseUrl()
-            override fun onParseImage() = viewModel.parseOffsets()
             override fun onCpuPairSelected(index: Int) = viewModel.selectCpuPair(index)
             override fun onSafeModeChanged(enabled: Boolean) = viewModel.toggleSafeMode(enabled)
             override fun onForceAttackTestChanged(enabled: Boolean) =
                 viewModel.toggleForceAttackTest(enabled)
 
             override fun onShizukuChanged(enabled: Boolean) = viewModel.toggleShizuku(enabled)
-            override fun onDialogItemSelected(index: Int) = viewModel.onDialogItemSelected(index)
             override fun onDialogInputChange(value: String) = viewModel.onDialogInputChange(value)
             override fun onDialogConfirm(value: String) = viewModel.onDialogConfirm(value)
             override fun onDialogDismiss() = viewModel.onDialogDismiss()
@@ -222,7 +207,6 @@ private fun GhostlockRoute(
             override fun onDebugExportLocationPick() = viewModel.onDebugExportLocationPick()
             override fun onDebugKernelLogChanged(enabled: Boolean) =
                 viewModel.onDebugKernelLogChanged(enabled)
-
             override fun onOpenParameters() = viewModel.onOpenParameters()
             override fun onCloseParameters() = viewModel.onCloseParameters()
             override fun onOpenLoadConfig() = viewModel.onOpenLoadConfig()

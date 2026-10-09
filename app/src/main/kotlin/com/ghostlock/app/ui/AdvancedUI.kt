@@ -140,8 +140,7 @@ private fun ProfileHintBanner(
 }
 
 /**
- * Advanced screen: offsets tooling, parameter overrides and the debug-only
- * log export switches. Debug preferences are hidden in release builds.
+ * Advanced screen: profile tooling, parameter overrides and debug-log export controls.
  */
 @Composable
 internal fun AdvancedScreen(
@@ -417,8 +416,8 @@ internal fun ParameterScreen(
 }
 
 /**
- * Configuration loading: the import/parse buttons, the builtin picker and the
- * list of verbatim user-imported documents (export, rename, delete).
+ * Configuration loading: profile imports, the builtin picker and the list of
+ * verbatim user-imported documents (export, rename, delete).
  */
 @Composable
 internal fun LoadConfigScreen(
@@ -467,22 +466,6 @@ internal fun LoadConfigScreen(
                     ArrowPreference(
                         title = stringResource(R.string.action_import_offsets_json),
                         onClick = actions::onImportOffsetsJson,
-                    )
-                }
-            }
-            item(key = "parse-ota") {
-                Card(modifier = Modifier.preferencePageItem()) {
-                    ArrowPreference(
-                        title = stringResource(R.string.action_parse_ota),
-                        onClick = actions::onParseOta,
-                    )
-                }
-            }
-            item(key = "parse-image") {
-                Card(modifier = Modifier.preferencePageItem()) {
-                    ArrowPreference(
-                        title = stringResource(R.string.action_parse),
-                        onClick = actions::onParseImage,
                     )
                 }
             }

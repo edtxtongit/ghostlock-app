@@ -15,6 +15,8 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -223,8 +225,407 @@ namespace ghostlock::attack {
         }
     }
 
+    namespace {
+        struct LaunchCgroupEntry final {
+            std::string hierarchy;
+            std::string controllers;
+            std::string path;
+        };
+
+        struct LaunchCgroupMount final {
+            std::string type;
+            std::string root;
+            std::string mount_point;
+            std::string mount_options;
+            std::string source;
+            std::string super_options;
+        };
+
+        static bool launch_read_file(const char *path, std::string &contents) {
+            support::UniqueFd fd(open(path, O_RDONLY | O_CLOEXEC));
+            if (!fd.valid()) return false;
+            std::array<char, 4096> buffer{};
+            for (;;) {
+                const ssize_t count = read(fd.get(), buffer.data(), buffer.size());
+                if (count > 0) {
+                    contents.append(buffer.data(), static_cast<size_t>(count));
+                    if (contents.size() > 1024 * 1024) {
+                        errno = EFBIG;
+                        return false;
+                    }
+                    continue;
+                }
+                if (count < 0 && errno == EINTR) continue;
+                return count == 0;
+            }
+        }
+
+        static std::vector<std::string_view> launch_split_fields(std::string_view text) {
+            std::vector<std::string_view> fields;
+            size_t cursor = 0;
+            while (cursor < text.size()) {
+                while (cursor < text.size() && (text[cursor] == ' ' || text[cursor] == '\t'))
+                    ++cursor;
+                if (cursor == text.size()) break;
+                const size_t end = text.find_first_of(" \t", cursor);
+                if (end == std::string_view::npos) {
+                    fields.push_back(text.substr(cursor));
+                    break;
+                }
+                fields.push_back(text.substr(cursor, end - cursor));
+                cursor = end + 1;
+            }
+            return fields;
+        }
+
+        static std::vector<std::string_view> launch_split_lines(std::string_view text) {
+            std::vector<std::string_view> lines;
+            size_t cursor = 0;
+            while (cursor < text.size()) {
+                const size_t end = text.find('\n', cursor);
+                std::string_view line = end == std::string_view::npos
+                        ? text.substr(cursor) : text.substr(cursor, end - cursor);
+                if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+                if (!line.empty()) lines.push_back(line);
+                if (end == std::string_view::npos) break;
+                cursor = end + 1;
+            }
+            return lines;
+        }
+
+        static bool launch_parse_cgroups(std::string_view text,
+                                         std::vector<LaunchCgroupEntry> &entries) {
+            for (const std::string_view line : launch_split_lines(text)) {
+                const size_t first = line.find(':');
+                const size_t second = first == std::string_view::npos
+                        ? std::string_view::npos : line.find(':', first + 1);
+                if (first == std::string_view::npos || second == std::string_view::npos)
+                    continue;
+                LaunchCgroupEntry entry;
+                entry.hierarchy.assign(line.substr(0, first));
+                entry.controllers.assign(line.substr(first + 1, second - first - 1));
+                entry.path.assign(line.substr(second + 1));
+                entries.push_back(std::move(entry));
+            }
+            return !entries.empty();
+        }
+
+        static std::string launch_unescape_mountinfo(std::string_view text) {
+            std::string result;
+            result.reserve(text.size());
+            for (size_t i = 0; i < text.size(); ++i) {
+                if (text[i] == '\\' && i + 3 < text.size() &&
+                    text[i + 1] >= '0' && text[i + 1] <= '7' &&
+                    text[i + 2] >= '0' && text[i + 2] <= '7' &&
+                    text[i + 3] >= '0' && text[i + 3] <= '7') {
+                    const int value = (text[i + 1] - '0') * 64 +
+                                      (text[i + 2] - '0') * 8 +
+                                      (text[i + 3] - '0');
+                    result.push_back(static_cast<char>(value));
+                    i += 3;
+                } else {
+                    result.push_back(text[i]);
+                }
+            }
+            return result;
+        }
+
+        static bool launch_parse_mounts(std::string_view text,
+                                        std::vector<LaunchCgroupMount> &mounts) {
+            for (const std::string_view line : launch_split_lines(text)) {
+                const size_t separator = line.find(" - ");
+                if (separator == std::string_view::npos) continue;
+                const auto left = launch_split_fields(line.substr(0, separator));
+                const auto right = launch_split_fields(line.substr(separator + 3));
+                if (left.size() < 6 || right.size() < 3) continue;
+                LaunchCgroupMount mount;
+                mount.type.assign(right[0]);
+                mount.root = launch_unescape_mountinfo(left[3]);
+                mount.mount_point = launch_unescape_mountinfo(left[4]);
+                mount.mount_options.assign(left[5]);
+                mount.source.assign(right[1]);
+                mount.super_options.assign(right[2]);
+                mounts.push_back(std::move(mount));
+            }
+            return !mounts.empty();
+        }
+
+        static bool launch_csv_contains(std::string_view list,
+                                        std::string_view value) noexcept {
+            size_t cursor = 0;
+            while (cursor <= list.size()) {
+                const size_t end = list.find(',', cursor);
+                const std::string_view field = end == std::string_view::npos
+                        ? list.substr(cursor) : list.substr(cursor, end - cursor);
+                if (field == value) return true;
+                if (end == std::string_view::npos) break;
+                cursor = end + 1;
+            }
+            return false;
+        }
+
+        static bool launch_mount_supports(const LaunchCgroupEntry &entry,
+                                          const LaunchCgroupMount &mount) noexcept {
+            if (entry.hierarchy == "0" && entry.controllers.empty())
+                return mount.type == "cgroup2";
+            if (mount.type != "cgroup") return false;
+            if (entry.controllers.empty()) return false;
+            size_t cursor = 0;
+            while (cursor <= entry.controllers.size()) {
+                const size_t end = entry.controllers.find(',', cursor);
+                const std::string_view controller = end == std::string::npos
+                        ? std::string_view(entry.controllers).substr(cursor)
+                        : std::string_view(entry.controllers).substr(cursor, end - cursor);
+                if (launch_csv_contains(mount.super_options, controller) ||
+                    launch_csv_contains(mount.source, controller) ||
+                    launch_csv_contains(mount.mount_options, controller))
+                    return true;
+                if (end == std::string::npos) break;
+                cursor = end + 1;
+            }
+            return false;
+        }
+
+        static bool launch_map_cgroup_path(std::string_view mount_root,
+                                           std::string_view process_path,
+                                           std::string &relative) {
+            if (mount_root.empty()) mount_root = "/";
+            if (mount_root == "/") {
+                relative.assign(process_path);
+                return true;
+            }
+            if (process_path == mount_root) {
+                relative = "/";
+                return true;
+            }
+            if (process_path.size() > mount_root.size() &&
+                process_path.substr(0, mount_root.size()) == mount_root &&
+                process_path[mount_root.size()] == '/') {
+                relative.assign(process_path.substr(mount_root.size()));
+                return true;
+            }
+            return false;
+        }
+
+        static std::string launch_join_cgroup_path(std::string_view mount_point,
+                                                   std::string_view relative) {
+            if (mount_point.empty()) mount_point = "/";
+            if (relative.empty() || relative == "/") return std::string(mount_point);
+            if (mount_point == "/") return std::string(relative);
+            std::string result(mount_point);
+            result.append(relative);
+            return result;
+        }
+
+        static bool launch_write_pid_to_cgroup(const std::string &directory,
+                                                pid_t pid, int *error_out) {
+            const std::string path = directory + "/cgroup.procs";
+            support::UniqueFd fd(open(path.c_str(), O_WRONLY | O_CLOEXEC));
+            if (!fd.valid()) {
+                if (error_out) *error_out = errno;
+                return false;
+            }
+            char text[32]{};
+            const int count = snprintf(text, sizeof(text), "%d\n",
+                                       static_cast<int>(pid));
+            if (count <= 0 || count >= static_cast<int>(sizeof(text))) {
+                if (error_out) *error_out = EOVERFLOW;
+                errno = EOVERFLOW;
+                return false;
+            }
+            size_t written = 0;
+            while (written < static_cast<size_t>(count)) {
+                const ssize_t result = write(fd.get(), text + written,
+                                             static_cast<size_t>(count) - written);
+                if (result > 0) {
+                    written += static_cast<size_t>(result);
+                    continue;
+                }
+                if (result < 0 && errno == EINTR) continue;
+                if (result == 0) errno = EIO;
+                if (error_out) *error_out = errno;
+                return false;
+            }
+            return true;
+        }
+
+        static bool launch_cgroup_entry_matches(std::string_view text,
+                                                 const LaunchCgroupEntry &expected) {
+            for (const std::string_view line : launch_split_lines(text)) {
+                const size_t first = line.find(':');
+                const size_t second = first == std::string_view::npos
+                        ? std::string_view::npos : line.find(':', first + 1);
+                if (first == std::string_view::npos || second == std::string_view::npos)
+                    continue;
+                if (line.substr(0, first) == expected.hierarchy &&
+                    line.substr(second + 1) == expected.path)
+                    return true;
+            }
+            return false;
+        }
+
+        static void launch_log_self_cgroup(const char *phase) {
+            std::string current;
+            if (!launch_read_file("/proc/self/cgroup", current)) {
+                fprintf(stderr,
+                        "[custom-launch] cgroup snapshot phase=%s pid=%d failed errno=%d\n",
+                        phase, static_cast<int>(getpid()), errno);
+                return;
+            }
+            fprintf(stderr, "[custom-launch] cgroup snapshot phase=%s pid=%d\n%s",
+                    phase, static_cast<int>(getpid()), current.c_str());
+            if (current.empty() || current.back() != '\n') fputc('\n', stderr);
+        }
+
+        static bool launch_move_to_pid1_cgroups() {
+            std::string pid1_text;
+            if (!launch_read_file("/proc/1/cgroup", pid1_text)) {
+                const int error = errno;
+                fprintf(stderr, "[custom-launch] cannot read /proc/1/cgroup errno=%d\n", error);
+                errno = error;
+                return false;
+            }
+            std::string mountinfo_text;
+            if (!launch_read_file("/proc/self/mountinfo", mountinfo_text)) {
+                const int error = errno;
+                fprintf(stderr, "[custom-launch] cannot read mountinfo errno=%d\n", error);
+                errno = error;
+                return false;
+            }
+            std::vector<LaunchCgroupEntry> pid1_entries;
+            std::vector<LaunchCgroupMount> mounts;
+            if (!launch_parse_cgroups(pid1_text, pid1_entries) ||
+                !launch_parse_mounts(mountinfo_text, mounts)) {
+                fprintf(stderr, "[custom-launch] no parseable PID 1 cgroup/mount hierarchy\n");
+                errno = ENOTSUP;
+                return false;
+            }
+
+            bool found = false;
+            for (const LaunchCgroupEntry &entry : pid1_entries) {
+                bool entry_moved = false;
+                int last_error = ENOENT;
+                std::string last_target;
+                for (const LaunchCgroupMount &mount : mounts) {
+                    if (!launch_mount_supports(entry, mount)) continue;
+                    std::string relative;
+                    if (!launch_map_cgroup_path(mount.root, entry.path, relative)) continue;
+                    const std::string target =
+                            launch_join_cgroup_path(mount.mount_point, relative);
+                    last_target = target;
+                    if (!launch_write_pid_to_cgroup(target, getpid(), &last_error))
+                        continue;
+                    std::string actual_text;
+                    if (!launch_read_file("/proc/self/cgroup", actual_text)) {
+                        last_error = errno;
+                        continue;
+                    }
+                    if (!launch_cgroup_entry_matches(actual_text, entry)) {
+                        last_error = EPROTO;
+                        continue;
+                    }
+                    fprintf(stderr,
+                            "[custom-launch] cgroup verified pid=%d hierarchy=%s controllers=%s path=%s target=%s\n",
+                            static_cast<int>(getpid()), entry.hierarchy.c_str(),
+                            entry.controllers.c_str(), entry.path.c_str(), target.c_str());
+                    entry_moved = true;
+                    found = true;
+                    break;
+                }
+                if (!entry_moved) {
+                    fprintf(stderr,
+                            "[custom-launch] cgroup move failed pid=%d hierarchy=%s controllers=%s path=%s target=%s errno=%d\n",
+                            static_cast<int>(getpid()), entry.hierarchy.c_str(),
+                            entry.controllers.c_str(), entry.path.c_str(),
+                            last_target.c_str(), last_error);
+                    errno = last_error;
+                    return false;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "[custom-launch] PID 1 has no supported cgroup hierarchy\n");
+                errno = ENOTSUP;
+                return false;
+            }
+            return true;
+        }
+
+        static int32_t run_isolated_program_child(char **argv) {
+            const pid_t pid = getpid();
+            if (setsid() < 0) {
+                const int error = errno;
+                fprintf(stderr, "[custom-launch] setsid failed pid=%d errno=%d\n",
+                        static_cast<int>(pid), error);
+                return 1;
+            }
+            const pid_t pgid = getpgrp();
+            const pid_t sid = getsid(0);
+            fprintf(stderr, "[custom-launch] session pid=%d pgid=%d sid=%d\n",
+                    static_cast<int>(pid), static_cast<int>(pgid), static_cast<int>(sid));
+            if (pgid != pid || sid != pid) {
+                fprintf(stderr, "[custom-launch] session verification failed pid=%d\n",
+                        static_cast<int>(pid));
+                return 1;
+            }
+
+            support::UniqueFd null_input(open("/dev/null", O_RDONLY | O_CLOEXEC));
+            if (!null_input.valid()) {
+                fprintf(stderr, "[custom-launch] /dev/null open failed errno=%d\n", errno);
+                return 1;
+            }
+            if (null_input.get() == STDIN_FILENO) {
+                const int flags = fcntl(STDIN_FILENO, F_GETFD);
+                if (flags < 0 || fcntl(STDIN_FILENO, F_SETFD, flags & ~FD_CLOEXEC) < 0) {
+                    fprintf(stderr, "[custom-launch] stdin setup failed errno=%d\n", errno);
+                    return 1;
+                }
+            } else {
+                if (dup2(null_input.get(), STDIN_FILENO) < 0) {
+                    fprintf(stderr, "[custom-launch] stdin setup failed errno=%d\n", errno);
+                    return 1;
+                }
+                null_input.reset();
+            }
+
+            launch_log_self_cgroup("before");
+            const bool cgroup_moved = launch_move_to_pid1_cgroups();
+            const int cgroup_error = cgroup_moved ? 0 : errno;
+            launch_log_self_cgroup(cgroup_moved ? "after" : "after_failed_move");
+            if (!cgroup_moved)
+                fprintf(stderr,
+                        "[custom-launch] continuing in inherited cgroup after migration failure errno=%d\n",
+                        cgroup_error);
+
+            const char *program = argv[2];
+            execvp(program, &argv[2]);
+            const int error = errno;
+            fprintf(stderr, "[custom-launch] execvp failed pid=%d program=%s errno=%d\n",
+                    static_cast<int>(pid), program, error);
+            return 127;
+        }
+    } // namespace
+
+    int32_t launch_custom_program_isolated(int32_t argc, char **argv) noexcept {
+        if (argc < 3 || !argv || !argv[2] || argv[2][0] == '\0') {
+            fprintf(stderr, "[custom-launch] invalid launcher arguments\n");
+            return 2;
+        }
+        const pid_t child = fork();
+        if (child < 0) {
+            fprintf(stderr, "[custom-launch] fork failed errno=%d\n", errno);
+            return 1;
+        }
+        if (child > 0) {
+            fprintf(stderr, "[custom-launch] detached setup child pid=%d target=%s\n",
+                    static_cast<int>(child), argv[2]);
+            fflush(stderr);
+            return 0;
+        }
+        return run_isolated_program_child(argv);
+    }
+
     void write_root_script(void) {
-        std::string script(12288, '\0');
+        std::string script(16384, '\0');
         support::UniqueFd sfd(
             open((config::runtime_config_snapshot().root_script_path.c_str()), O_WRONLY | O_CREAT | O_TRUNC, 0755));
         if (!sfd.valid()) {
@@ -233,11 +634,25 @@ namespace ghostlock::attack {
             return;
         }
 
+        std::array<char, 1024> native_binary_path{};
+        const ssize_t native_binary_path_len = readlink(
+                "/proc/self/exe", native_binary_path.data(),
+                native_binary_path.size() - 1);
+        if (native_binary_path_len <= 0 ||
+            static_cast<size_t>(native_binary_path_len) >=
+                    native_binary_path.size() - 1) {
+            pr_warning("root script native binary path read failed errno=%d\n", errno);
+            native_binary_path[0] = '\0';
+        } else {
+            native_binary_path[static_cast<size_t>(native_binary_path_len)] = '\0';
+        }
+
         int32_t n = snprintf(
             script.data(), script.size(),
             "#!/system/bin/sh\n"
             "HOME_DIR='%s'\n"
             "LOG='%s'\n"
+            "GHOSTLOCK_NATIVE_BIN='%s'\n"
             "SAFE_MODE=%d\n"
             "KSUD=\"$HOME_DIR/ksud\"\n"
             "echo \"[*] root script start uid=$(id -u) euid=$(id -u)\" >\"$LOG\"\n"
@@ -267,8 +682,9 @@ namespace ghostlock::attack {
             "    fi\n"
             "  fi\n"
             "  if [ -x \"$GLK_LAUNCH_PROGRAM\" ]; then\n"
-            "    \"$GLK_LAUNCH_PROGRAM\" $GLK_LAUNCH_ARGS >>\"$LOG\" 2>&1 &\n"
-            "    echo \"[*] custom launcher started pid=$! program=$GLK_LAUNCH_PROGRAM\" >>\"$LOG\"\n"
+            "    if [ ! -x \"$GHOSTLOCK_NATIVE_BIN\" ]; then echo '[!] custom launcher: native helper unavailable' >>\"$LOG\"; return 0; fi\n"
+            "    \"$GHOSTLOCK_NATIVE_BIN\" --ghostlock-launch-isolated \"$GLK_LAUNCH_PROGRAM\" $GLK_LAUNCH_ARGS </dev/null >>\"$LOG\" 2>&1 &\n"
+            "    echo \"[*] custom launcher session-isolation helper pid=$! target=$GLK_LAUNCH_PROGRAM\" >>\"$LOG\"\n"
             "  else\n"
             "    echo \"[!] custom launcher: $GLK_LAUNCH_PROGRAM is not executable\" >>\"$LOG\"\n"
             "  fi\n"
@@ -447,6 +863,7 @@ namespace ghostlock::attack {
             "fi\n",
             (config::runtime_config_snapshot().home_dir.c_str()),
             (config::runtime_config_snapshot().ksu_log_path.c_str()),
+            native_binary_path.data(),
             session::g_exploit_session.profile.safe_mode() ? 1 : 0,
             (config::runtime_config_snapshot().debug_dir.c_str()));
         if (n < 0 || n >= static_cast<int32_t>(script.size())) {

@@ -17,8 +17,6 @@ private fun ondkHome(): String? =
     System.getenv("ONDK_HOME")?.takeIf(String::isNotBlank)
         ?: localProperties().getProperty("ondk.dir")?.takeIf(String::isNotBlank)
 
-private fun useOndk(): Boolean = !ondkHome().isNullOrBlank()
-
 private fun resolveNdkDir(): String {
     val ondk = ondkHome()
     if (ondk != null) return ondk
@@ -44,26 +42,9 @@ private fun resolveNdkDir(): String {
     throw GradleException("NDK not found; set ANDROID_NDK_HOME or ndk.dir in local.properties")
 }
 
-private data class NdkTools(val clang: String, val ar: String)
+private data class NdkTools(val clang: String)
 
-private fun resolveCargoExecutable(): String {
-    val cargoOnPath = System.getenv("PATH")
-        .orEmpty()
-        .split(File.pathSeparator)
-        .asSequence()
-        .map { File(it, "cargo") }
-        .firstOrNull { it.isFile && it.canExecute() }
-    if (cargoOnPath != null) return cargoOnPath.absolutePath
-
-    val cargoInRustupHome = File(System.getProperty("user.home"), ".cargo/bin/cargo")
-    return if (cargoInRustupHome.isFile && cargoInRustupHome.canExecute()) {
-        cargoInRustupHome.absolutePath
-    } else {
-        "cargo"
-    }
-}
-
-private fun extractNdkTools(): NdkTools {
+private fun resolveNdkTools(): NdkTools {
     val ndk = resolveNdkDir()
     val osName = System.getProperty("os.name").lowercase()
     val isWindows = osName.contains("windows")
@@ -78,12 +59,11 @@ private fun extractNdkTools(): NdkTools {
             binDir,
             if (isWindows) "aarch64-linux-android34-clang.cmd" else "aarch64-linux-android34-clang",
         ).absolutePath,
-        ar = File(binDir, if (isWindows) "llvm-ar.exe" else "llvm-ar").absolutePath,
     )
 }
 
 // Every module's output lives under the root build/ directory (native,
-// host-test, extract, kernel-profiles, app). Delete the whole tree here so a
+// host-test, kernel-profiles, app). Delete the whole tree here so a
 // single root `clean` resets all of them.
 tasks.register<Delete>("clean") {
     description = "Delete the root build/ directory (all module outputs)."
@@ -114,7 +94,7 @@ tasks.register<Copy>("prepareGhostlockJniLibs") {
      * binary, while the top-level ghostlock keeps its symbols for the
      * disassembly comparisons. Paths are captured as plain strings so the
      * configuration cache can serialize this task. */
-    val stripPath = File(extractNdkTools().clang)
+    val stripPath = File(resolveNdkTools().clang)
         .resolveSibling("llvm-strip").absolutePath
     val packagedPath = File(rootDir, "app/src/main/jniLibs/arm64-v8a/libghostlock.so").absolutePath
     doLast {
@@ -124,39 +104,4 @@ tasks.register<Copy>("prepareGhostlockJniLibs") {
             .waitFor()
         check(code == 0) { "llvm-strip failed with $code" }
     }
-}
-
-tasks.register<Exec>("buildGhostlockExtract") {
-    description = "buildGhostlockExtract"
-    val tools = extractNdkTools()
-    val isOndk = useOndk()
-    val command = mutableListOf(resolveCargoExecutable())
-    if (isOndk) command += "+ondk"
-    command += listOf("build", "--release", "--target", "aarch64-linux-android")
-    if (isOndk) {
-        command += listOf("-Z", "build-std=std,panic_abort")
-        command += listOf("-Z", "build-std-features=optimize_for_size")
-    }
-    workingDir(rootProject.file("tools/extract_rs"))
-    commandLine(command)
-    environment("CC_aarch64_linux_android", tools.clang)
-    environment("AR_aarch64_linux_android", tools.ar)
-    environment("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER", tools.clang)
-    environment("RUSTFLAGS", "-C force-unwind-tables=no -C link-arg=-Wl,--icf=all")
-    if (isOndk) environment("RUSTC_BOOTSTRAP", "1")
-    inputs.files(
-        fileTree("tools/extract_rs/src") { include("**/*.rs") },
-        file("tools/extract_rs/Cargo.toml"),
-        file("tools/extract_rs/Cargo.lock"),
-    )
-    inputs.property("useOndk", isOndk)
-    outputs.file(file("build/extract/aarch64-linux-android/release/ghostlock-extract"))
-}
-
-tasks.register<Copy>("prepareGhostlockExtractJniLibs") {
-    description = "prepareGhostlockExtractJniLibs"
-    dependsOn("buildGhostlockExtract")
-    from("build/extract/aarch64-linux-android/release/ghostlock-extract")
-    into("app/src/main/jniLibs/arm64-v8a")
-    rename { "libextract.so" }
 }

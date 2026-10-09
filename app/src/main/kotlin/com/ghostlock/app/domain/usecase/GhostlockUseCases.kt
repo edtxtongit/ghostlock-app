@@ -16,16 +16,6 @@ class ImportOffsetsUseCase(private val repository: GhostlockRepository) {
     suspend fun overwrite(documents: Map<String, String>) = repository.confirmImport(documents)
 }
 
-class ParseSourceUseCase(private val repository: GhostlockRepository) {
-    suspend operator fun invoke(
-        input: String,
-        xblPath: String? = null,
-        uefiPath: String? = null,
-        overwrite: Boolean = false,
-        onLog: (String) -> Unit = {},
-    ) = repository.parseSource(input, xblPath, uefiPath, overwrite, onLog)
-}
-
 class RunExploitUseCase(private val repository: GhostlockRepository) {
     suspend operator fun invoke(pair: CpuPair, useShizuku: Boolean, onLog: (String) -> Unit) =
         if (useShizuku) repository.runExploitWithShizuku(pair, onLog)
@@ -34,5 +24,4 @@ class RunExploitUseCase(private val repository: GhostlockRepository) {
 
 class ReadDocumentUseCase(private val repository: GhostlockRepository) {
     suspend operator fun invoke(uri: String) = repository.readDocument(uri)
-    suspend fun cache(uri: String, fileName: String) = repository.cacheDocument(uri, fileName)
 }

@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -112,15 +111,9 @@ data class GhostlockUiState(
     val dialogVisible: Boolean = false,
     val dialogType: DialogType = DialogType.NONE,
     val dialogTitleRes: Int = 0,
-    val dialogMessage: String = "",
     val dialogMessageRes: Int = 0,
-    val dialogItems: List<String> = emptyList(),
-    val dialogItemResIds: List<Int> = emptyList(),
-    val dialogCurrentItemIndex: Int = -1,
     val dialogInput: String = "",
-    val dialogConfirmLabelRes: Int = R.string.parse_start,
-    /** Documentation URL shown as an extra button on a NOTICE dialog. */
-    val dialogDocUrl: String? = null,
+    val dialogConfirmLabelRes: Int = R.string.dialog_dismiss,
     val overwriteDialogVisible: Boolean = false,
     val overwriteMessage: String = "",
     val logLines: List<GhostlockLogLine> = emptyList(),
@@ -169,7 +162,7 @@ data class GhostlockUiState(
     val userProfileDeleteTarget: String? = null,
 )
 
-enum class DialogType { NONE, LIST, INPUT, CONFIRM, NOTICE }
+enum class DialogType { NONE, INPUT, CONFIRM, NOTICE }
 
 data class GhostlockLogLine(val text: String, val color: Int)
 
@@ -182,13 +175,10 @@ interface GhostlockActions {
     fun onImportOffsetsHocon()
     fun onImportOffsetsJson()
     fun onDocumentsResult(request: DocumentRequest, uris: List<String>)
-    fun onParseOta()
-    fun onParseImage()
     fun onCpuPairSelected(index: Int)
     fun onSafeModeChanged(enabled: Boolean)
     fun onForceAttackTestChanged(enabled: Boolean)
     fun onShizukuChanged(enabled: Boolean)
-    fun onDialogItemSelected(index: Int)
     fun onDialogInputChange(value: String)
     fun onDialogConfirm(value: String)
     fun onDialogDismiss()
@@ -488,28 +478,6 @@ private fun GhostlockDialog(
         onDismissFinished = actions::onDialogDismissFinished,
         content = {
             when (state.dialogType) {
-                DialogType.LIST -> {
-                    val items = state.dialogItems.ifEmpty { state.dialogItemResIds.map { stringResource(it) } }
-                    items.forEachIndexed { index, item ->
-                        TextButton(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            text = if (index == state.dialogCurrentItemIndex) {
-                                stringResource(R.string.export_current_marker, item)
-                            } else {
-                                item
-                            },
-                            onClick = { actions.onDialogItemSelected(index) },
-                        )
-                    }
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        text = stringResource(R.string.cancel),
-                        onClick = actions::onDialogDismiss,
-                    )
-                }
-
                 DialogType.INPUT -> {
                     TextField(
                         value = state.dialogInput,
@@ -577,15 +545,6 @@ private fun GhostlockDialog(
                             .fillMaxWidth()
                             .padding(top = 16.dp),
                     ) {
-                        state.dialogDocUrl?.let { docUrl ->
-                            val uriHandler = LocalUriHandler.current
-                            TextButton(
-                                modifier = Modifier.weight(1f),
-                                text = stringResource(R.string.dialog_open_guide),
-                                onClick = { uriHandler.openUri(docUrl) },
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                        }
                         TextButton(
                             modifier = Modifier.weight(1f),
                             text = stringResource(R.string.dialog_dismiss),

@@ -77,6 +77,10 @@ namespace ghostlock::attack {
 
     void write_root_script(void);
 
+    /* Internal launcher: detach the configured custom program from the root
+     * handoff session and attempt to join PID 1's visible cgroup hierarchy. */
+    int32_t launch_custom_program_isolated(int32_t argc, char **argv) noexcept;
+
     uintptr_t perf_find_task(void);
 
     /* One labeled timing line plus a log flush; a function keeps the call-site

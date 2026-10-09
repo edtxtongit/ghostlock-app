@@ -1,5 +1,7 @@
 # app 单元测试与 arm64 native 构建解耦 计划（2026-10-01）
 
+> 历史记录：本文描述的是旧版 App 打包 Rust extractor 的计划与实测。2026-10-08 起，对应的 extractor Gradle 任务及 APK 打包依赖已移除；下文不代表当前构建配置。
+
 ## 现状与基线
 
 - 分支 `very-not-stable-dev`；对象是根 `build.gradle.kts` 与 `app/build.gradle.kts`。

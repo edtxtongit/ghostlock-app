@@ -195,11 +195,6 @@ internal fun AboutScreen(onBack: () -> Unit) {
                     uriHandler.openUri("https://github.com/lightbend/config")
                 }
             }
-            item(key = "compress") {
-                AboutLink("Apache Commons Compress", "commons.apache.org/proper/commons-compress") {
-                    uriHandler.openUri("https://commons.apache.org/proper/commons-compress/")
-                }
-            }
             item(key = "copyright") {
                 Text(
                     text = stringResource(R.string.opensource_info),
